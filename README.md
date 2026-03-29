@@ -7,7 +7,7 @@ Este repositório contém a bancada de testes experimentais desenvolvida para o 
 
 ---
 
-## 🎯 Objetivo e Justificativa (O Porquê)
+## 🎯 Objetivo e Justificativa
 
 Aplicações web que lidam com visualização arquitetônica, engenharia e maquetes virtuais (BIM) frequentemente esbarram em um limite de hardware. O ecossistema padrão baseado em **WebGL** sofre de um severo gargalo na CPU (*Central Processing Unit*) ao processar milhares de *Draw Calls* simultâneas. O navegador gasta mais tempo validando os estados de renderização do que efetivamente desenhando os pixels, causando quedas drásticas de fluidez (FPS) em modelos densos.
 
