@@ -12,7 +12,6 @@ camera.position.set(0, 5, 15);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
-renderer.useLegacyLights = false;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 document.body.appendChild(renderer.domElement);
@@ -28,22 +27,34 @@ const dirLight = new THREE.DirectionalLight(0xffffff, 2.5);
 dirLight.position.set(10, 20, 10);
 scene.add(dirLight);
 
-const gltfLoader = new GLTFLoader();
-
 const dracoLoader = new DRACOLoader();
 dracoLoader.setDecoderPath('https://unpkg.com/three@0.162.0/examples/jsm/libs/draco/');
 dracoLoader.setDecoderConfig({ type: 'wasm' });
 
+const gltfLoader = new GLTFLoader();
 gltfLoader.setDRACOLoader(dracoLoader);
 
 console.log("Iniciando o download e a descompressão Draco...");
 
 gltfLoader.load(
-    '/bistro_geometry.glb',
+    '/bistro_texture.glb',
     (gltf) => {
         const model = gltf.scene;
+
+        model.traverse((node) => {
+            if (node.isMesh) {
+                node.material.transparent = false;
+                node.material.opacity = 1.0;
+                node.material.side = THREE.DoubleSide; 
+                node.material.depthWrite = true;
+                node.material.depthTest = true;
+
+                if (node.material.map) node.material.map.anisotropy = 16;
+            }
+        });
+
         scene.add(model);
-        console.log("Modelo carregado com sucesso!", model);
+        console.log("Modelo carregado!", model);
     },
     (xhr) => {
         console.log(`Carregando: ${(xhr.loaded / xhr.total * 100).toFixed(2)}%`);
@@ -55,6 +66,7 @@ gltfLoader.load(
 
 function animate() {
     requestAnimationFrame(animate);
+    controls.update();
     renderer.render(scene, camera);
 }
 
