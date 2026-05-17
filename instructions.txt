@@ -1,0 +1,101 @@
+MANUAL DE INSTRUÇÕES: SISTEMA DE BENCHMARK GRAPHICS WEB (TCC)
+Este manual descreve o procedimento passo a passo para configurar o ambiente, instalar as dependências, organizar os ativos tridimensionais e executar o cenário de testes automatizado para coletar as métricas de desempenho entre WebGL e WebGPU.
+
+1. Pré-requisitos e Configuração do Ambiente
+O código utiliza módulos nativos do Ecossistema JavaScript ES6 (import/export). Para que o navegador consiga resolver esses caminhos e carregar o modelo .glb sem problemas de CORS (restrições de segurança do navegador), você precisa de um servidor local. Recomenda-se o uso do Vite, que é leve e extremamente rápido.
+
+Passo 1: Instalar o Node.js
+Certifique-se de ter o Node.js instalado na sua máquina. Você pode verificar abrindo o terminal e digitando:
+
+Bash
+node -v
+Passo 2: Inicializar o Projeto
+Dentro da pasta raiz do seu repositório (webgpu-vs-webgl-benchmark), inicialize um projeto Node se ainda não o fez:
+
+Bash
+npm init -y
+Passo 3: Instalar as Dependências Básicas
+Instale o Three.js e a biblioteca de monitoramento de frames Stats.js executando o comando abaixo no terminal:
+
+Bash
+npm install three stats.js
+Como ferramenta de desenvolvimento para subir o servidor, instale o Vite:
+
+Bash
+npm install vite --save-dev
+2. Organização dos Arquivos e Estrutura de Diretórios
+Para que o script funcione perfeitamente com os caminhos declarados, monte a estrutura de pastas do seu servidor local exatamente assim:
+
+Plaintext
+webgpu-vs-webgl-benchmark/
+├── node_modules/
+├── public/
+│   └── CenarioBistroB.glb
+├── src/
+│   └── main.js
+├── index.html
+├── package.json
+└── README.md
+💡 Regra Crítica do Vite: O arquivo CenarioBistroB.glb de 115 MB deve ser colocado obrigatoriamente dentro da pasta public/. O Vite serve os arquivos dessa pasta na raiz do servidor, mapeando o arquivo diretamente para o caminho /CenarioBistroB.glb requisitado pelo GLTFLoader.
+
+Conteúdo do arquivo index.html
+Crie um arquivo index.html simples na raiz do projeto para renderizar o canvas:
+
+HTML
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Benchmark: WebGL vs WebGPU</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>
+3. Inicialização do Servidor Local
+Com os pacotes instalados e o código colado em src/main.js, inicialize o servidor de desenvolvimento do Vite:
+
+Bash
+npx vite
+O terminal exibirá um endereço local, geralmente http://localhost:5173/. Abra esse link no Google Chrome ou Microsoft Edge (navegadores com suporte nativo e estável ao WebGPU).
+
+4. Executando os Ensaios de Teste (WebGL vs WebGPU)
+O script foi projetado para ler parâmetros diretamente da barra de endereço da URL. Isso permite alternar o motor gráfico sem alterar uma única linha de código.
+
+Execução 1: Testando em WebGL
+Para rodar o benchmark sob a API clássica WebGL, adicione a flag ?api=webgl no final da URL:
+
+URL: http://localhost:5173/?api=webgl
+
+Validação: Abra o console do desenvolvedor (tecla F12) e verifique a mensagem impressa: MOTOR GRÁFICO ATIVO: WebGL e a identificação da sua placa de vídeo RTX 3050.
+
+Execução 2: Testando em WebGPU
+Para rodar o benchmark sob a nova API de baixo nível WebGPU, mude a flag para ?api=webgpu:
+
+URL: http://localhost:5173/?api=webgpu
+
+Validação: O console do desenvolvedor deverá exibir em destaque rosa: MOTOR GRÁFICO ATIVO: WebGPU e GPU DETECTADA (WebGPU): Interface de Hardware Nativa Ativa.
+
+5. Protocolo de Captura de Dados e Download do Relatório
+Para garantir o rigor metodológico do TCC e evitar distorções nos resultados por interferência humana, siga rigorosamente este protocolo durante a execução de cada teste:
+
+Estabilização da Carga: Carregue a URL desejada e aguarde o modelo ser totalmente decodificado na memória. O console avisará o término exibindo o tempo exato, ex: Tempo de Carregamento: 3.41s.
+
+Foco na Aplicação: Dê um clique com o mouse no meio da tela para garantir que a janela do navegador esteja em foco ativo.
+
+Início do Teste: Pressione a Barra de Espaço. A câmera começará a se mover sozinha pelo trilho de forma suave e automatizada, desabilitando o controle do mouse temporariamente. O cronômetro de 60 segundos entrará em ação.
+
+Coleta Isolada: Não mexa no mouse, não mude de aba e não minimize o navegador enquanto a câmera faz o percurso. Isso evita picos artificiais de processamento.
+
+Fim do Teste e Download: Assim que a câmera alcançar o último ponto da curva (exatamente aos 60 segundos), o movimento para, os controles manuais do mouse retornam e o navegador disparará um download automático de um arquivo de texto formatado:
+
+No modo WebGL: relatorio_benchmark_webgl_cenario_b.txt
+
+No modo WebGPU: relatorio_benchmark_webgpu_cenario_b.txt
+
+Os arquivos resultantes conterão todo o resumo estatístico formatado no topo pronto para o corpo do TCC, acompanhado pela tabela detalhada de todos os frames para a montagem posterior de gráficos comparativos.

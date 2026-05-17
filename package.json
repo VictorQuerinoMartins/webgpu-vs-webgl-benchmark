@@ -1,5 +1,5 @@
 {
-  "name": "tcc-webgpu",
+  "name": "webgpu-vs-webgl-benchmark",
   "version": "0.0.0",
   "private": true,
   "type": "module",
