@@ -43,3 +43,52 @@ Sempre que o usuário pedir para medir desempenho, o código deve extrair dados 
 - [ ] A solução não quebra na versão fixada do Three.js?
 - [ ] O método de câmera para o benchmark dispensa intervenção manual?
 - [ ] As medições de performance estão focadas em métricas quantitativas (milissegundos e chamadas)?
+
+---
+
+# AGENTS.md - CONTEXTO DO PROJETO E DIRETRIZES DE IA
+
+> **Instrução para a IA Assistant:** Leia este arquivo com atenção antes de sugerir ou implementar qualquer alteração no código. Você deve respeitar rigorosamente a arquitetura, a pilha tecnológica e as restrições metodológicas estabelecidas abaixo para evitar quebras de escopo e regressões de código.
+
+---
+
+## 1. ESCOPO DO PROJETO e CONTEXTO DO TCC
+* **Autor:** Victor Querino Martins (Bacharelado em Ciência da Computação - UNESPAR Apucarana).
+* **Objetivo Geral:** Estudo Comparativo de Desempenho Gráfico e Eficiência Energética entre as APIs WebGL e WebGPU no ecossistema Web, utilizando modelos arquitetônicos de alta complexidade.
+* **Hardware de Teste Fixo:** Computador equipado com GPU dedicada NVIDIA GeForce RTX 3050 Laptop GPU (4GB VRAM limit).
+* **Foco de Otimização:** Computação Verde (Green IT). Avaliar a taxa de quadros e o tempo de frame, confrontando-os posteriormente com logs externos de consumo de energia instantânea em Watts extraídos via `nvidia-smi`.
+
+---
+
+## 2. PILHA TECNOLÓGICA (TECH STACK)
+* **Core Engine:** Three.js (Módulos ES6 nativos via JavaScript puro).
+* **Build Tool / Servidor Local:** Vite (Porta padrão: `5173`).
+* **Formatos 3D:** Arquivos `.glb` otimizados e comprimidos via Google Draco Compression.
+* **Componentes de Telemetria:** `stats.js` (Feedback visual de FPS) e uma lógica interna em JavaScript para cálculo de médias matemáticas e exportação de dados.
+* **Ambiente Espacial:** Iluminação baseada em imagem via `RGBELoader` (HDR `venice_sunset_1k.hdr`).
+
+---
+
+## 3. MATRIZ DE CENÁRIOS EXPERIMENTAIS (ESTRUTURA DE ATIVOS)
+O modelo tridimensional de teste é o **Amazon Lumberyard Bistro**. Ele foi fracionado estritamente em 3 arquivos dentro da pasta `public/`, que servem como a matriz do benchmark:
+
+1. **Cenário A (Baseline / Geometria Pura):** `CenarioBistroA.glb` (~15 MB). Estrutura poligonal limpa, sem mapas de textura aplicados.
+2. **Cenário B (Média Carga / 0.5K):** `CenarioBistroB.glb` (~115 MB). Materiais vinculados a imagens PNG compactadas em lote via ImageMagick para a resolução exata de 512x512 pixels (Power of Two).
+3. **Cenário C (Alta Carga / 1K):** `CenarioBistroC.glb` (~328 MB). Materiais vinculados a imagens PNG em resolução estável de 1024x1024 pixels.
+
+*❌ NOTA DE RESTRIÇÃO DE ESCOPO:* Mapas em resolução 2K (2048x2048px) causaram falhas catastróficas por falta de memória (*Out Of Memory* / Crash de VRAM) na RTX 3050 durante os ensaios preliminares e foram desconsiderados do escopo contínuo. **Não sugira texturas acima de 1K.**
+
+---
+
+## 4. DIRETRIZES E REGRAS DE IMPLEMENTAÇÃO CRÍTICAS (GUARDRAILS)
+
+### Rule 1: Arquitetura Monolítica Inteligente de Renderer
+Não crie arquivos de código separados para WebGL e WebGPU. O sistema deve utilizar **um único arquivo de entrada (`src/main.js`)** que chaveia o motor de renderização dinamicamente em tempo de execução ao ler os parâmetros de busca da URL (*Query Strings*):
+* `http://localhost:5173/?api=webgl` -> Instancia o `THREE.WebGLRenderer` convencional.
+* `http://localhost:5173/?api=webgpu` -> Instancia o `WebGPURenderer` moderno.
+
+### Rule 2: Imutabilidade do Trilho de Câmera (*Flight Path*)
+A trajetória de automação da câmera foi calibrada milimetricamente para evitar colisões com as paredes da calçada e os objetos decorativos internos (mancebo da porta principal) observados em gravações de teste. **Nunca altere as coordenadas do array `CatmullRomCurve3`**, a menos que explicitamente solicitado pelo usuário.
+
+### Rule 3: Formatação Estrita do Relatório de Saída
+A função `exportarMetricasCSV` calcula em tempo real o FPS médio, o FPS mínimo (ponto de engasgo), o FPS máximo, o Frame Time médio e o máximo. Ela dispara o download automático de um arquivo `.txt` estruturado com o sumário exato requisitado para colagem direta no texto da monografia. Mantenha essa estrutura textual intacta.
