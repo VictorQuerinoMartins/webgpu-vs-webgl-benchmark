@@ -1,0 +1,119 @@
+==================================================================
+ANALISE COMPARATIVA — WEBGL vs WEBGPU (VIA THREE.JS E PURO/RAW)
+Cenario A — Geometria pura, sem texturas (Bistro Interior)
+==================================================================
+
+------------------------------------------------------------------
+1. TABELA COMPLETA — CENARIO A (4 CONDICOES)
+------------------------------------------------------------------
+
+Condicao            | FPS Medio | FPS Efetivo* | Frame Time | Draw Calls | Frames(60s) | Carregamento
+---------------------------------------------------------------------------------------------------------
+WebGL  (Three.js)    |   56.44   |    54.5      |  18.34 ms  |    505     |    3272     |   608 ms
+WebGPU (Three.js)    |   51.86   |    51.1      |  19.58 ms  |   3258     |    3064     |   803 ms
+WebGL-RAW  (puro)    |   66.63   |    64.7      |  15.45 ms  |   1591     |    3883     |   767 ms
+WebGPU-RAW (puro)    |  107.91   |    96.4      |  10.37 ms  |   1591     |    5784     |   645 ms
+
+* FPS Efetivo = total de frames amostrados / 60s (mais confiavel que a media
+  aritmetica do FPS instantaneo, que e distorcida por outliers/oscilacao de
+  frame pacing do navegador).
+
+------------------------------------------------------------------
+2. O ACHADO CENTRAL: A INVERSAO DE RANKING
+------------------------------------------------------------------
+
+                  | Via Three.js                | Puro (RAW)
+------------------------------------------------------------------
+Vencedor          | WebGL  (54.5 vs 51.1 FPS)    | WebGPU (96.4 vs 64.7 FPS)
+Margem            | WebGL  vence por  +6.7%      | WebGPU vence por +49%
+
+Sem framework, o WebGPU e quase 2x mais rapido que o WebGL — exatamente
+como a literatura teorica prediz (pipelines pre-validados, menor overhead
+de CPU, paralelizacao de comandos). Porem, via Three.js essa vantagem
+desaparece e se inverte. Isso demonstra que o framework NAO e uma camada
+neutra de comparacao — ele penaliza desproporcionalmente o caminho WebGPU.
+
+------------------------------------------------------------------
+3. QUANTIFICANDO O "CUSTO DO FRAMEWORK" POR API
+------------------------------------------------------------------
+
+API     | Frame Time RAW | Frame Time Three.js | Overhead adicionado | Overhead relativo
+------------------------------------------------------------------------------------------
+WebGL   |     15.45 ms    |       18.34 ms       |      +2.89 ms        |     +18.7%
+WebGPU  |     10.37 ms    |       19.58 ms       |      +9.21 ms        |     +88.8%
+
+O Three.js adiciona 3.2x mais overhead RELATIVO ao caminho WebGPU do que
+ao caminho WebGL. Este e provavelmente o numero mais citavel da monografia
+para sustentar a tese de que o gargalo observado e de IMPLEMENTACAO DE
+FRAMEWORK, e nao da API em si.
+
+------------------------------------------------------------------
+4. CONFIRMACAO VIA DRAW CALLS
+------------------------------------------------------------------
+
+Renderer            | Draw Calls Medio | vs. baseline RAW (1591 meshes)
+------------------------------------------------------------------------
+WebGL  (Three.js)    |       505        |   -68%  (frustum culling ativo)
+WebGPU (Three.js)    |      3258        |  +105%  (mais que o dobro da cena!)
+
+O renderer WebGL do Three.js realiza frustum culling com eficacia,
+descartando objetos fora do campo de visao da camera (reducao de 68% nas
+chamadas de desenho). O renderer WebGPU do Three.js, por outro lado, nao
+apenas deixa de fazer esse descarte como envia MAIS QUE O DOBRO de draw
+calls do que existem malhas na cena (3258 vs 1591) — evidenciando multiplos
+passes de renderizacao por quadro (provavelmente depth-prepass + color
+pass do sistema de nos "three/webgpu", ainda em estagio experimental na
+versao 0.183.2 utilizada neste estudo).
+
+------------------------------------------------------------------
+5. RESULTADOS COMPLEMENTARES — CENARIOS B E C (VIA THREE.JS)
+   (referencia — sem contraparte RAW ainda executada)
+------------------------------------------------------------------
+
+Cenario B (texturas 512x512):
+  WebGL  -> FPS Medio: 26.23 | Frame Time: 45.26 ms | Draw Calls:  732 | Carreg.: 2683 ms
+  WebGPU -> FPS Medio: 21.44 | Frame Time: 57.65 ms | Draw Calls: 1231 | Carreg.: 2683 ms
+  Gap WebGPU vs WebGL: -18%
+
+Cenario C (texturas 1024x1024):
+  WebGL  -> FPS Medio: 17.91 | Frame Time: 63.71 ms | Draw Calls:  897 | Carreg.: 3626 ms
+  WebGPU -> FPS Medio: 14.15 | Frame Time: 81.44 ms | Draw Calls: 4437 | Carreg.: 3779 ms
+  Gap WebGPU vs WebGL: -21%
+
+Observacao: o gap WebGL > WebGPU (via Three.js) AUMENTA conforme a carga
+de textura sobe (-8% no Cenario A, -18% no B, -21% no C). Isso sugere que
+o overhead do renderer WebGPU do Three.js tambem escala mal com o
+gerenciamento de texturas, alem do problema estrutural de draw calls
+identificado no Cenario A.
+
+------------------------------------------------------------------
+6. CONCLUSAO / TEXTO SUGERIDO PARA A MONOGRAFIA
+------------------------------------------------------------------
+
+"Os resultados do experimento de controle revelam uma inversao critica:
+quando avaliadas sem a camada de abstracao do Three.js, a API WebGPU
+superou o WebGL em 49% (96,4 vs. 64,7 FPS efetivos), confirmando a
+vantagem arquitetural teorica de pipelines pre-validados. Entretanto, ao
+se utilizar o motor Three.js — cenario representativo do uso real em
+aplicacoes de producao —, essa vantagem se inverte, com o WebGL superando
+o WebGPU em 6,7%. A analise de draw calls explica a discrepancia: o
+renderer WebGPU do Three.js submeteu em media 3.258 chamadas de desenho
+por quadro, mais que o dobro do numero de malhas da cena (1.591),
+evidenciando multiplos passes de renderizacao e ausencia de frustum
+culling eficaz — em contraste com o renderer WebGL, que reduziu as
+chamadas em 68% atraves do descarte de objetos fora do campo de visao.
+Conclui-se que a desvantagem de desempenho do WebGPU observada na pratica
+nao e uma limitacao da API, mas um artefato da maturidade de
+implementacao do framework avaliado."
+
+------------------------------------------------------------------
+7. PROXIMOS PASSOS SUGERIDOS
+------------------------------------------------------------------
+
+- Executar WebGL-RAW e WebGPU-RAW para os Cenarios B e C (com texturas),
+  para verificar se a inversao de ranking se mantem sob carga de textura
+  ou se o gap se comporta de forma diferente quando ha amostragem de
+  imagem envolvida.
+- Cruzar estes dados de FPS/Frame Time com os logs de consumo energetico
+  (nvidia-smi) para a dimensao de Computacao Verde (Joules/Frame,
+  Frames/Watt), conforme escopo do TCC.

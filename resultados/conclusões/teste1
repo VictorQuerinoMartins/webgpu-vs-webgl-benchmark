@@ -1,0 +1,147 @@
+================================================================================
+ANÁLISE COMPARATIVA DOS ENSAIOS — WebGL vs WebGPU (Amazon Lumberyard Bistro)
+Autor: Victor Querino Martins — UNESPAR Campus Apucarana
+Data: 16/06/2026
+================================================================================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. TABELA CONSOLIDADA DE MÉTRICAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Métrica                        | WGL-A  | WGP-A  | WGL-B  | WGP-B  | WGL-C  | WGP-C
+-------------------------------|--------|--------|--------|--------|--------|--------
+Carregamento (s)               |  0,61  |  0,80  |  2,68  |  2,68  |  3,63  |  3,78
+FPS Médio                      | 56,44  | 51,86  | 26,23  | 21,44  | 17,91  | 14,15
+FPS Mínimo (pico de engasgo)   | 24,10  | 19,31  |  8,08  |  4,69  |  5,90  |  3,17
+FPS Máximo                     |3333,33*| 102,04 | 64,10  | 47,39  | 67,57  | 44,64
+Frame Time Médio (ms)          | 18,34  | 19,58  | 45,26  | 57,65  | 63,71  | 81,44
+Frame Time Máximo (ms)         | 41,50  | 51,80  |123,80  |213,10  |169,50  |315,40
+Draw Calls Médio †             |   505  |  3258  |   732  |  1231  |   897  |  4437
+Draw Calls Máximo †            |  1319  |  6321  |  2517  |  2271  |  2637  |  5173
+Geometrias na VRAM             |  1338  |  1339  |  1270  |  1271  |  1338  |  1339
+Texturas na VRAM               |     4  |     8  |   394  |   398  |   394  |   398
+Total de Quadros Amostrados    |  3272  |  3064  |  1326  |  1041  |   942  |   737
+
+* Artifact de medição (ver seção 3).
+† Métrica não diretamente comparável entre APIs (ver seção 3).
+
+WGL = WebGL | WGP = WebGPU | A = Cenário A | B = Cenário B | C = Cenário C
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. ANÁLISE POR DIMENSÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+2.1 TAXA DE QUADROS (FPS) — Desempenho bruto de renderização
+──────────────────────────────────────────────────────────────
+O WebGL superou o WebGPU em todos os três cenários:
+
+  Cenário A: WebGL +8,8%  ( 56,44 vs 51,86 FPS )
+  Cenário B: WebGL +22,3% ( 26,23 vs 21,44 FPS )
+  Cenário C: WebGL +26,6% ( 17,91 vs 14,15 FPS )
+
+A vantagem do WebGL aumenta progressivamente com a carga de textura. Isso indica
+que o WebGPURenderer do Three.js ainda não alcançou maturidade de otimização
+equivalente ao WebGLRenderer na gestão de texturas de alta resolução.
+
+O padrão de FPS dentro de cada ensaio também é coerente: a câmera percorre o
+trilho partindo de uma área densa (muitos objetos no frustum → baixo FPS) em
+direção a uma área aberta (poucos objetos → FPS sobe), demonstrando que o
+frustum culling opera corretamente em ambas as APIs.
+
+
+2.2 TEMPO DE FRAME — Estabilidade e engasgo
+─────────────────────────────────────────────
+O Frame Time Máximo revela a magnitude dos picos de engasgo (stutter):
+
+  Cenário A: WebGL 41,5ms vs WebGPU 51,8ms  → WebGPU +24,8% mais instável
+  Cenário B: WebGL 123,8ms vs WebGPU 213,1ms → WebGPU +72,1% mais instável
+  Cenário C: WebGL 169,5ms vs WebGPU 315,4ms → WebGPU +86,1% mais instável
+
+O WebGPU apresenta picos de engasgo significativamente maiores conforme a carga
+aumenta. O Frame Time Máximo de 315 ms no Cenário C (WebGPU) representa uma
+pausa perceptível de aproximadamente 3 frames perdidos consecutivamente — um
+indicador crítico de qualidade de experiência.
+
+
+2.3 TEMPO DE CARREGAMENTO INICIAL
+───────────────────────────────────
+O tempo de carregamento (parse do GLB + decodificação Draco) foi praticamente
+idêntico entre as APIs para o mesmo cenário, variando menos de 0,2 segundos:
+
+  Cenário A:  WebGL 0,61s / WebGPU 0,80s  (+0,19s)
+  Cenário B:  WebGL 2,68s / WebGPU 2,68s  (igual)
+  Cenário C:  WebGL 3,63s / WebGPU 3,78s  (+0,15s)
+
+Isso é esperado: o carregamento é dominado pelo parser JavaScript do GLTFLoader
+e pelo decodificador Draco, que são independentes do backend de renderização.
+A diferença mínima no Cenário A deve-se ao tempo adicional de inicialização
+assíncrona da pipeline WebGPU (await renderer.init()).
+
+
+2.4 MEMÓRIA DE VÍDEO (VRAM)
+─────────────────────────────
+As contagens de geometrias e texturas na VRAM são praticamente idênticas entre
+APIs para o mesmo cenário (variação de 1–4 unidades), confirmando que ambas
+renderizam a mesma cena com o mesmo volume de dados na GPU. A diferença de
+4 texturas extras no WebGPU deve-se a recursos internos do WebGPURenderer
+(buffers de pipeline e texturas de sistema).
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. ANOMALIAS E LIMITAÇÕES METODOLÓGICAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+3.1 FPS Máximo de 3333,33 FPS (WebGL Cenário A)
+─────────────────────────────────────────────────
+O valor de 3333,33 FPS é um artifact de medição ocorrido no primeiro frame após
+o acionamento do benchmark, quando o THREE.Clock retorna um delta t ≈ 0,0003s,
+gerando FPS = 1/Δt ≈ 3333. Esse valor foi corrigido no código com um filtro
+que descarta frames com delta inferior a 1ms. Os ensaios devem ser repetidos
+para o Cenário A com a correção aplicada.
+
+3.2 Draw Calls — Métrica não comparável entre APIs
+────────────────────────────────────────────────────
+A contagem de Draw Calls via renderer.info.render.calls diverge drasticamente
+entre as implementações:
+
+  WebGL  Cenário A: 505 calls   | WebGPU Cenário A: 3.258 calls (6,4×)
+  WebGL  Cenário C: 897 calls   | WebGPU Cenário C: 4.437 calls (4,9×)
+
+Isso não representa ineficiência real do WebGPU. O WebGLRenderer contabiliza
+apenas chamadas glDrawElements/glDrawArrays. O WebGPURenderer do Three.js
+contabiliza adicionalmente: atualizações de bind groups, trocas de pipeline
+state, compute dispatches e render passes auxiliares da sua pipeline interna.
+As duas métricas medem abstrações diferentes e NÃO podem ser comparadas
+diretamente. Esta limitação deve ser explicitada na metodologia do TCC.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. CONCLUSÃO CIENTÍFICA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Os resultados refutam a hipótese de que o WebGPU entrega desempenho superior ao
+WebGL no ambiente de teste avaliado. Sob a camada de abstração do Three.js r168,
+o WebGL mostrou-se consistentemente mais rápido em FPS médio e significativamente
+mais estável em picos de frame time, com vantagem crescente conforme a carga de
+textura aumenta.
+
+Esta descoberta é cientificamente relevante por dois motivos:
+
+  (a) O potencial teórico do WebGPU (acesso explícito à GPU, pipelines compute,
+      menor overhead de driver) ainda não se materializa em ganho de desempenho
+      perceptível na camada de abstração JavaScript — a maturidade de
+      implementação do WebGLRenderer supera a do WebGPURenderer experimental.
+
+  (b) O resultado contraria a narrativa frequente de que "WebGPU é sempre mais
+      rápido que WebGL", demonstrando que a comparação depende criticamente da
+      maturidade da implementação, não apenas do potencial da especificação.
+
+A expectativa é que futuras versões do Three.js WebGPURenderer, à medida que
+saiam do status experimental, revertam esse quadro — especialmente em cenários
+de alta carga computacional onde o menor overhead de driver do WebGPU poderá
+se traduzir em ganhos concretos.
+
+================================================================================
+FIM DO DOCUMENTO
+================================================================================
