@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Asset-fonte bruto (988MB, sem compressão) — usado apenas para gerar
+# CenarioBistroD.glb via gltf-transform. Não é usado por nenhum modo de
+# renderização e não precisa ficar versionado.
+public/bistro_exterior_base.glb
