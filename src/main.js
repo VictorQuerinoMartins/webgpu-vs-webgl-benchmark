@@ -45,6 +45,7 @@ document.body.appendChild(stats.dom);
 
 let metricsLog = [];
 let tempoCarregamentoAssets = 0;
+let autoStartEpochMs = 0;
 
 document.title = `Benchmark | ${CONFIG_API.toUpperCase()} | Cenário ${cenarioAlvo.toUpperCase()}`;
 
@@ -148,6 +149,7 @@ window.addEventListener("keydown", (e) => {
     isAutomated = !isAutomated;
     if (isAutomated) {
       metricsLog = [];
+      autoStartEpochMs = Date.now();
       clock.start();
     }
     controls.enabled = !isAutomated;
@@ -175,6 +177,7 @@ function exportarMetricasCSV(data) {
   let conteudoTexto = "";
   conteudoTexto += `API de Renderizacao: ${CONFIG_API.toUpperCase()}\n`;
   conteudoTexto += `Cenario: ${cenarioAlvo.toUpperCase()}\n`;
+  conteudoTexto += `Timestamp Unix de Inicio do Ensaio (ms): ${autoStartEpochMs}\n`;
   conteudoTexto += `Tempo de Carregamento Inicial (Assets + Draco): ${(tempoCarregamentoAssets / 1000).toFixed(2)} segundos (${tempoCarregamentoAssets.toFixed(2)} ms)\n`;
   conteudoTexto += `Taxa de Quadros (FPS) Media: ${fpsMedio.toFixed(2)} FPS\n`;
   conteudoTexto += `Taxa de Quadros (FPS) Minima (Pico de Engasgo): ${fpsMinimo.toFixed(2)} FPS\n`;

@@ -380,7 +380,7 @@ function createTextureCache(gl, texImages) {
 // ================================================================
 // EXPORTAÇÃO — mesmo formato do main.js e do main-raw-webgpu.js
 // ================================================================
-function exportReport(data, loadTime) {
+function exportReport(data, loadTime, autoStartEpochMs) {
   if (!data.length) return;
 
   const n         = data.length;
@@ -395,6 +395,7 @@ function exportReport(data, loadTime) {
   let txt = "";
   txt += `API de Renderizacao: ${CONFIG_API.toUpperCase()}\n`;
   txt += `Cenario: ${CONFIG_CENARIO.toUpperCase()}\n`;
+  txt += `Timestamp Unix de Inicio do Ensaio (ms): ${autoStartEpochMs}\n`;
   txt += `Tempo de Carregamento Inicial (Assets + Draco): ${(loadTime/1000).toFixed(2)} segundos (${loadTime.toFixed(2)} ms)\n`;
   txt += `Taxa de Quadros (FPS) Media: ${fpsMedio.toFixed(2)} FPS\n`;
   txt += `Taxa de Quadros (FPS) Minima (Pico de Engasgo): ${fpsMin.toFixed(2)} FPS\n`;
@@ -463,12 +464,14 @@ async function main() {
   let metricsLog = [];
   let t0         = 0;
   let prevTs     = 0;
+  let autoStartEpochMs = 0;
 
   window.addEventListener("keydown", (e) => {
     if (e.code !== "Space") return;
     running = !running;
     if (running) {
       metricsLog = [];
+      autoStartEpochMs = Date.now();
       t0 = prevTs = performance.now();
     }
   });
@@ -501,7 +504,7 @@ async function main() {
 
       if (t >= 1.0) {
         running = false;
-        exportReport(metricsLog, loadTime);
+        exportReport(metricsLog, loadTime, autoStartEpochMs);
         overlay.textContent =
           `WEBGL-RAW | Cenário ${CONFIG_CENARIO.toUpperCase()}\n` +
           `Benchmark concluído — relatório baixado.\n` +
