@@ -6,9 +6,6 @@ import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import Stats from "stats.js";
 
-// =================================================================
-// CONFIGURAÇÃO E PARÂMETROS DE BENCHMARK
-// =================================================================
 const params = new URLSearchParams(window.location.search);
 const CONFIG_API = params.get("api")?.toLowerCase() || "webgpu";
 const CONFIG_CENARIO = params.get("cenario")?.toLowerCase() || "c";
@@ -27,18 +24,12 @@ const caminhosCenarios = {
   a: "/CenarioBistroA.glb",
   b: "/CenarioBistroB.glb",
   c: "/CenarioBistroC.glb",
-  // Cenário D: Bistro Exterior (bistro_exterior_base.glb), texturas
-  // redimensionadas para 2048px + Draco — extra ao escopo original de A/B/C.
   d: "/CenarioBistroD.glb",
 };
 
-// Cenários B e C: texturas embutidas no GLB (geradas com gltf-transform resize)
-// Cenário A: material cinza puro (sem texturas)
 const ASSET_PATH = caminhosCenarios[cenarioAlvo];
 
-// =================================================================
-// INICIALIZAÇÃO DE CENA E RENDERIZADOR
-// =================================================================
+// inicia 
 const stats = new Stats();
 stats.showPanel(0); 
 document.body.appendChild(stats.dom);
@@ -83,9 +74,10 @@ const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
 dirLight.position.set(5, 10, 7);
 scene.add(dirLight);
 
-// =================================================================
+
+
 // CARREGAMENTO DE MODELOS E INJEÇÃO DE TEXTURAS (AUTOMAÇÃO)
-// =================================================================
+
 const dracoLoader = new DRACOLoader();
 dracoLoader.setDecoderPath("https://www.gstatic.com/draco/versioned/decoders/1.5.6/");
 
@@ -106,12 +98,6 @@ gltfLoader.load(ASSET_PATH, (gltf) => {
       return;
     }
 
-    // Cenários B e C: usa as texturas embutidas no GLB diretamente, mas o
-    // arquivo exporta TODOS os 132 materiais com alphaMode=BLEND (defeito
-    // de exportação — até concreto e calçada vêm marcados como
-    // transparentes). Isso forçava o Three.js a reordenar back-to-front a
-    // cena inteira a cada frame, causando superfícies "desaparecendo"
-    // conforme a câmera se move. Corrige forçando opacidade real.
     const materiais = Array.isArray(node.material) ? node.material : [node.material];
     materiais.forEach((mat) => {
       mat.transparent = false;
@@ -122,11 +108,13 @@ gltfLoader.load(ASSET_PATH, (gltf) => {
 
   scene.add(gltf.scene);
   console.log(`%c Carregamento Concluído: ${tempoCarregamentoAssets.toFixed(2)}ms`, "color: #00ff00");
+
+  // Sinaliza para automação externa (ex.: scripts/automatizar_coleta.mjs)
+  // que os assets já estão prontos e é seguro simular o [SPACE].
+  window.__assetsReady = true;
 });
 
-// =================================================================
 // LÓGICA DE ANIMAÇÃO, BENCHMARK E EXPORTAÇÃO
-// =================================================================
 const curve = new THREE.CatmullRomCurve3([
   new THREE.Vector3(11.0, 2.4, 14.0), new THREE.Vector3(8.0, 2.4, 10.0),
   new THREE.Vector3(5.0, 2.4, 6.0), new THREE.Vector3(2.0, 2.3, 2.1),

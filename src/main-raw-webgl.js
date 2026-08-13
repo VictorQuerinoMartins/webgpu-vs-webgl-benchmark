@@ -476,6 +476,10 @@ async function main() {
     }
   });
 
+  //  ( scripts/automatizar_coleta)
+  
+  window.__assetsReady = true;
+
   const fovY = 75 * Math.PI / 180; // mesmo campo de visão do main.js
 
   function frame(ts) {

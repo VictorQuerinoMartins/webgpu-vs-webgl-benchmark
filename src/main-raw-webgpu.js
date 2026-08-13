@@ -523,6 +523,9 @@ async function main() {
     }
   });
 
+  //  automação externa
+  window.__assetsReady = true;
+
   const fovY = 75 * Math.PI / 180; // mesmo campo de visão do main.js
 
   function frame(ts) {

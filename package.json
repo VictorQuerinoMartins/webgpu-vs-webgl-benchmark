@@ -6,9 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "analisar-energia": "node scripts/analisar_energia.mjs",
+    "coletar": "node scripts/automatizar_coleta.mjs"
   },
   "devDependencies": {
+    "@gltf-transform/core": "^4.4.2",
+    "@gltf-transform/extensions": "^4.4.2",
+    "@gltf-transform/functions": "^4.4.2",
+    "playwright-core": "^1.62.1",
     "vite": "^8.0.1"
   },
   "dependencies": {
