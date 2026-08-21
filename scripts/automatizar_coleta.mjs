@@ -17,15 +17,32 @@ const DEST_DIR = {
   "webgpu-raw": "resultados/web-gpu_puro",
 };
 
+// nNNN = instancing (ver CHANGELOG-IA.md); reaproveita toda a maquinaria de cenario trocando so a URL.
+const RE_CENARIO_INSTANCING = /^n(\d+)$/;
+
+function urlBenchmark(base, apiParam, cenario) {
+  const m = cenario.match(RE_CENARIO_INSTANCING);
+  return m
+    ? `${base}/?api=${apiParam}&densidade=${m[1]}`
+    : `${base}/?api=${apiParam}&cenario=${cenario}`;
+}
+
+function urlRaw(base, pagina, cenario) {
+  const m = cenario.match(RE_CENARIO_INSTANCING);
+  return m
+    ? `${base}/${pagina}?densidade=${m[1]}`
+    : `${base}/${pagina}?cenario=${cenario}`;
+}
+
 const URL_BUILDER = {
-  webgl: (base, cenario) => `${base}/?api=webgl&cenario=${cenario}`,
-  webgpu: (base, cenario) => `${base}/?api=webgpu&cenario=${cenario}`,
-  "webgl-raw": (base, cenario) => `${base}/raw-webgl.html?cenario=${cenario}`,
-  "webgpu-raw": (base, cenario) => `${base}/raw-webgpu.html?cenario=${cenario}`,
+  webgl: (base, cenario) => urlBenchmark(base, "webgl", cenario),
+  webgpu: (base, cenario) => urlBenchmark(base, "webgpu", cenario),
+  "webgl-raw": (base, cenario) => urlRaw(base, "raw-webgl.html", cenario),
+  "webgpu-raw": (base, cenario) => urlRaw(base, "raw-webgpu.html", cenario),
 };
 
 const MODOS_VALIDOS = Object.keys(DEST_DIR);
-const CENARIOS_VALIDOS = ["a", "b", "c", "d"];
+const CENARIOS_VALIDOS = ["a", "b", "c", "d", "n500", "n2000", "n5000"];
 
 
 // CLI parsing (sem dependencias externas)
@@ -125,10 +142,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Captura de metricas de GPU (Green IT + VRAM + temperatura) — amostrador
-// nativo de nvidia-smi a 1Hz, na mesma chamada le potencia (W), memoria
-// de video alocada (MB) e temperatura do nucleo (°C)
-
+// nvidia-smi a 1Hz: potencia, VRAM e temperatura numa unica chamada (Green IT).
 const NVIDIA_SMI_QUERY = "power.draw,memory.used,temperature.gpu";
 
 async function checarNvidiaSmi() {
@@ -169,10 +183,67 @@ function iniciarAmostradorDeGpu(caminhoCsv) {
   };
 }
 
-// Randomizacao da ordem de execucao (Fisher-Yates) — evita que deriva
-// termica acumulada ao longo de um lote longo vire vies sistematico
-// contra as combinacoes que calhariam de rodar por ultimo
+// Snapshot idle da maquina (GPU, energia, apps abertos) pra auditar o estado antes do lote.
 
+async function lerEstadoWindows() {
+  const psScript = [
+    "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
+    "$plano = (powercfg /getactivescheme) -join ' '",
+    "$bateria = Get-CimInstance -Namespace root/WMI -ClassName BatteryStatus -ErrorAction SilentlyContinue | Select-Object -First 1 PowerOnline, Charging",
+    "$apps = Get-Process | Where-Object { $_.MainWindowTitle -ne '' } | Select-Object Id, ProcessName, MainWindowTitle",
+    "[PSCustomObject]@{ plano = $plano; ac = $bateria.PowerOnline; carregando = $bateria.Charging; apps = @($apps) } | ConvertTo-Json -Depth 5 -Compress",
+  ].join("; ");
+
+  const { stdout } = await execFileAsync("powershell", ["-NoProfile", "-NonInteractive", "-Command", psScript]);
+  return JSON.parse(stdout.trim());
+}
+
+async function capturarBaselineSistema(caminhoTxt) {
+  let temp = "?", watts = "?", vram = "?", util = "?";
+  try {
+    const { stdout } = await execFileAsync("nvidia-smi", [
+      "--query-gpu=temperature.gpu,power.draw,memory.used,utilization.gpu",
+      "--format=csv,noheader,nounits",
+    ]);
+    [temp, watts, vram, util] = stdout.trim().split(",").map((s) => s.trim());
+  } catch (err) {
+    console.warn(`  [baseline] falha ao ler GPU: ${err.message}`);
+  }
+
+  let plano = "indisponivel", alimentacao = "indisponivel", apps = [];
+  try {
+    const dados = await lerEstadoWindows();
+    plano = dados.plano || "indisponivel";
+    alimentacao = dados.ac === true ? "Na tomada (AC)" : dados.ac === false ? "Na bateria" : "indisponivel";
+    apps = Array.isArray(dados.apps) ? dados.apps : dados.apps ? [dados.apps] : [];
+  } catch (err) {
+    console.warn(`  [baseline] falha ao ler estado do Windows: ${err.message}`);
+  }
+
+  let txt = `Baseline do sistema — capturado antes do lote (idle, antes do aquecimento)\n`;
+  txt += `Timestamp: ${new Date().toISOString()}\n\n`;
+  txt += `--- GPU (nvidia-smi) ---\n`;
+  txt += `Temperatura: ${temp} C\nPotencia: ${watts} W\nVRAM usada: ${vram} MiB\nUtilizacao: ${util} %\n\n`;
+  txt += `--- Energia (Windows) ---\nPlano ativo: ${plano}\nAlimentacao: ${alimentacao}\n\n`;
+  txt += `--- Processos visiveis do usuario (${apps.length}) ---\n`;
+  apps.forEach((a) => { txt += `${a.Id}\t${a.ProcessName}\t${a.MainWindowTitle}\n`; });
+
+  mkdirSync(dirname(caminhoTxt), { recursive: true });
+  writeFileSync(caminhoTxt, txt, "utf-8");
+
+  console.log(`  Baseline salvo -> ${caminhoTxt}`);
+  console.log(`  GPU idle: ${temp}C, ${watts}W, ${vram}MiB VRAM, ${util}% util | Plano: ${plano} | ${alimentacao}`);
+
+  const utilNum = Number(util);
+  if (Number.isFinite(utilNum) && utilNum > 10) {
+    console.warn(
+      `  [baseline] AVISO: GPU com ${util}% de utilizacao antes do lote comecar — possivel carga residual ` +
+      `de outro processo/execucao anterior. Considere aguardar a GPU esfriar antes de coletar dados oficiais.`
+    );
+  }
+}
+
+// Fisher-Yates evita que deriva termica vire vies sistematico contra combinacoes do fim do lote.
 function embaralhar(array) {
   const copia = [...array];
   for (let i = copia.length - 1; i > 0; i--) {
@@ -191,17 +262,14 @@ async function correlacionarMetricasGpu(caminhoRelatorio, caminhoPowerLog) {
   }
 }
 
-// Execucao de um unico ensaio
 async function rodarEnsaio(browser, { modo, cenario, run, opts, caminhoPowerLog, aquecimento = false }) {
   const url = URL_BUILDER[modo](opts.baseUrl, cenario);
   const destDir = DEST_DIR[modo];
 
-  // Ensaio de aquecimento leva sufixo proprio (nao "_run<N>") para ficar
-  // claramente fora da convencao de nomes usada pela analise oficial,
-  // sem precisar deletar o arquivo (transparencia > descarte silencioso).
-
+  // Sufixo "aquecimento" (nao "_run<N>") marca claramente que nao e dado oficial.
   const sufixo = aquecimento ? "aquecimento" : `run${run}`;
-  const destPath = join(destDir, `relatorio_benchmark_${modo}_cenario_${cenario}_${sufixo}.txt`);
+  const rotuloCenario = RE_CENARIO_INSTANCING.test(cenario) ? `instancing_${cenario}` : `cenario_${cenario}`;
+  const destPath = join(destDir, `relatorio_benchmark_${modo}_${rotuloCenario}_${sufixo}.txt`);
 
   const context = await browser.newContext({
     viewport: { width: 1600, height: 900 },
@@ -252,7 +320,6 @@ async function rodarEnsaio(browser, { modo, cenario, run, opts, caminhoPowerLog,
   }
 }
 
-// Execucao principal
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
 
@@ -266,30 +333,35 @@ async function main() {
 
   await checarServidor(opts.baseUrl);
 
-  let amostrador = null;
-  if (opts.metricasGpu) {
-    const nvidiaOk = await checarNvidiaSmi();
-    if (!nvidiaOk) {
-      console.warn(
-        "[automatizar_coleta] AVISO: nvidia-smi nao encontrado ou falhou ao executar. " +
-        "Desativando captura de potencia/VRAM para este lote (use --sem-metricas-gpu " +
-        "para evitar esta tentativa em maquinas sem GPU NVIDIA). Os relatorios gerados " +
-        "NAO terao as metricas de Green IT nem VRAM em MB da secao 3 do CLAUDE.md."
-      );
-      opts.metricasGpu = false;
-    } else {
-      const caminhoCsv = join("resultados", "power_logs", `power_log_${Date.now()}.csv`);
-      amostrador = iniciarAmostradorDeGpu(caminhoCsv);
-      console.log(`  Metricas de GPU (Potencia + VRAM): ativadas — log em ${caminhoCsv} (nvidia-smi, 1 Hz)`);
-    }
+  const nvidiaOk = await checarNvidiaSmi();
+  if (opts.metricasGpu && !nvidiaOk) {
+    console.warn(
+      "[automatizar_coleta] AVISO: nvidia-smi nao encontrado ou falhou ao executar. " +
+      "Desativando captura de potencia/VRAM para este lote (use --sem-metricas-gpu " +
+      "para evitar esta tentativa em maquinas sem GPU NVIDIA). Os relatorios gerados " +
+      "NAO terao as metricas de Green IT nem VRAM em MB da secao 3 do CLAUDE.md."
+    );
+    opts.metricasGpu = false;
   }
   if (!opts.metricasGpu) {
     console.log("  Metricas de GPU (Potencia + VRAM): desativadas");
   }
 
-  // combinacoes modo x cenario uma vez, embaralhada DENTRO da rodada —
-  // nao um shuffle global das N repeticoes juntas. 
+  if (nvidiaOk) {
+    const caminhoBaseline = join("resultados", "power_logs", `baseline_${Date.now()}.txt`);
+    await capturarBaselineSistema(caminhoBaseline);
+  } else {
+    console.warn("  [baseline] nvidia-smi indisponivel — baseline do sistema nao capturado.");
+  }
 
+  let amostrador = null;
+  if (opts.metricasGpu) {
+    const caminhoCsv = join("resultados", "power_logs", `power_log_${Date.now()}.csv`);
+    amostrador = iniciarAmostradorDeGpu(caminhoCsv);
+    console.log(`  Metricas de GPU (Potencia + VRAM): ativadas — log em ${caminhoCsv} (nvidia-smi, 1 Hz)`);
+  }
+
+  // Embaralha dentro de cada rodada — nao um shuffle global das N repeticoes.
   const combosBase = [];
   for (const modo of opts.modos) {
     for (const cenario of opts.cenarios) {

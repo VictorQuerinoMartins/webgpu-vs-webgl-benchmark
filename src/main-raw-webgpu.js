@@ -1,22 +1,21 @@
-// Renderizador WebGPU Puro — Experimento de Controle do TCC
-// Three.js é usado EXCLUSIVAMENTE para descompressão Draco/GLB e decodificação
-// de texturas embutidas. Toda a renderização é feita via GPURenderPipeline
-// (sem framework). Suporta os 3 cenários via "?cenario=a|b|c" (Regra 1 do
-// CLAUDE.md aplicada ao experimento de controle).
-
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 
-// ================================================================
-// CONFIGURAÇÃO
-// ================================================================
+
 const params = new URLSearchParams(window.location.search);
 const CONFIG_API     = "webgpu-raw";
 const CONFIG_CENARIO = params.get("cenario")?.toLowerCase() || "a";
 const DURATION_MS    = 60000;
 
-if (!["a", "b", "c", "d"].includes(CONFIG_CENARIO)) {
+// Cenário de estresse de Draw Calls: ?densidade=500|2000|5000 (mesma cena/grid/trilho, só reimplementados em WebGPU puro).
+const CONFIG_DENSIDADE_INSTANCING = parseInt(params.get("densidade") || "0", 10);
+if (![0, 500, 2000, 5000].includes(CONFIG_DENSIDADE_INSTANCING)) {
+  throw new Error(`Parâmetro "densidade" inválido: "${params.get("densidade")}". Use 500, 2000 ou 5000.`);
+}
+const MODO_INSTANCING = CONFIG_DENSIDADE_INSTANCING > 0;
+
+if (!MODO_INSTANCING && !["a", "b", "c", "d"].includes(CONFIG_CENARIO)) {
   throw new Error(`Parâmetro "cenario" inválido: "${CONFIG_CENARIO}".`);
 }
 
@@ -24,29 +23,52 @@ const caminhosCenarios = {
   a: "/CenarioBistroA.glb",
   b: "/CenarioBistroB.glb",
   c: "/CenarioBistroC.glb",
-  // Cenário D: Bistro Exterior, texturas 2048px + Draco — extra ao escopo original.
   d: "/CenarioBistroD.glb",
 };
-const ASSET_PATH = caminhosCenarios[CONFIG_CENARIO];
+const ASSET_PATH = MODO_INSTANCING ? "/objetos/vespa.glb" : caminhosCenarios[CONFIG_CENARIO];
 
-document.title = `Benchmark | WEBGPU-RAW | Cenário ${CONFIG_CENARIO.toUpperCase()}`;
+document.title = MODO_INSTANCING
+  ? `Benchmark | WEBGPU-RAW | Instancing N=${CONFIG_DENSIDADE_INSTANCING}`
+  : `Benchmark | WEBGPU-RAW | Cenário ${CONFIG_CENARIO.toUpperCase()}`;
 
-// ================================================================
-// TRILHO DA CÂMERA — idêntico ao main.js (Regra 3 do CLAUDE.md)
-// ================================================================
+const ESPACAMENTO_GRID_INSTANCING = 4;
+const ladoGridInstancing = MODO_INSTANCING ? Math.ceil(Math.cbrt(CONFIG_DENSIDADE_INSTANCING)) : 0;
+
+function gerarPosicoesGridInstancing(n, lado, espacamento) {
+  const offset = (lado - 1) / 2;
+  const posicoes = [];
+  for (let i = 0; i < n; i++) {
+    const x = i % lado;
+    const y = Math.floor(i / lado) % lado;
+    const z = Math.floor(i / (lado * lado));
+    posicoes.push([(x - offset) * espacamento, (y - offset) * espacamento, (z - offset) * espacamento]);
+  }
+  return posicoes;
+}
+
+function gerarWaypointsOrbitaInstancing(lado, espacamento) {
+  const extensao = lado * espacamento;
+  const raio = extensao * 0.9;
+  const altura = extensao * 0.55;
+  const NUM_PONTOS = 12;
+  const pontos = [];
+  for (let i = 0; i < NUM_PONTOS; i++) {
+    const angulo = (i / NUM_PONTOS) * Math.PI * 2;
+    pontos.push([Math.cos(angulo) * raio, altura, Math.sin(angulo) * raio]);
+  }
+  return pontos;
+}
+
 const WAYPOINTS = [
   [11.0, 2.4, 14.0],  [8.0, 2.4, 10.0],
-  [5.0,  2.4,  6.0],  [2.0, 2.3,  2.1],
-  [0.0,  2.2, -1.0],  [-2.0,  2.2, -4.0],
+  [5.0,  2.4,  6.0],  [3.0, 2.3,  5.0],
+  [-4.0, 2.2,  2.0],  [-4.5,  2.2, -3.0],
   [-4.5, 2.2, -6.5],  [-7.0,  2.2, -7.5],
   [-9.5, 2.2, -8.2],  [-12.0, 2.2, -8.5],
   [-14.5, 2.3, -7.8], [-16.0, 2.4, -6.5],
 ];
 
-// ================================================================
-// MATEMÁTICA VETORIAL E MATRICIAL
-// Column-major; NDC WebGPU com profundidade [0, 1].
-// ================================================================
+
 const v3sub   = (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
 const v3dot   = (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
 const v3cross = (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
@@ -86,10 +108,6 @@ function mat4Mul(a, b) {
   return o;
 }
 
-// ================================================================
-// INTERPOLAÇÃO CATMULL-ROM
-// Reproduz THREE.CatmullRomCurve3 com closed=false.
-// ================================================================
 function catmullRomPoint(waypoints, t) {
   const n  = waypoints.length;
   const sc = Math.max(0, Math.min(t, 0.9999)) * (n - 1);
@@ -110,16 +128,14 @@ function catmullRomPoint(waypoints, t) {
   );
 }
 
-// ================================================================
-// SHADERS WGSL
-// Group 0 = câmera (viewProj). Group 1 = textura do material (ou
-// placeholder cinza para o Cenário A / materiais sem mapa de cor).
-// ================================================================
 const WGSL = /* wgsl */`
 struct Uni { viewProj : mat4x4<f32> }
 @group(0) @binding(0) var<uniform> u : Uni;
 @group(1) @binding(0) var texSampler : sampler;
 @group(1) @binding(1) var tex : texture_2d<f32>;
+// Offset do grid; Group 2 fica (0,0,0) nos Cenários A-D (zeroOffsetBindGroup em main()).
+struct Offset { valor : vec3<f32> }
+@group(2) @binding(0) var<uniform> off : Offset;
 
 struct VOut {
   @builtin(position) pos : vec4<f32>,
@@ -133,7 +149,7 @@ struct VOut {
   @location(2) uv       : vec2<f32>,
 ) -> VOut {
   var o : VOut;
-  o.pos = u.viewProj * vec4<f32>(position, 1.0);
+  o.pos = u.viewProj * vec4<f32>(position + off.valor, 1.0);
   o.n   = normal;
   o.uv  = uv;
   return o;
@@ -147,18 +163,13 @@ struct VOut {
 }
 `;
 
-// ================================================================
-// INICIALIZAÇÃO WEBGPU — powerPreference obrigatório (Regra 2)
-// ================================================================
+
 async function initWebGPU(canvas) {
   if (!navigator.gpu) throw new Error("WebGPU não suportado neste navegador.");
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
   if (!adapter) throw new Error("Adaptador WebGPU não disponível (verifique os flags do Chrome).");
 
-  // Diagnóstico de GPU — necessário pois o Chrome/Edge no Windows ignora
-  // "powerPreference" em requestAdapter() (crbug.com/369219127). Este log
-  // confirma, a cada execução, qual GPU física foi de fato selecionada
-  // (Regra 2 do CLAUDE.md exige a dGPU, não a iGPU Intel).
+  // Diagnóstico de GPU — Chrome/Edge no Windows às vezes ignora "powerPreference".
   const info = adapter.info ?? (adapter.requestAdapterInfo ? await adapter.requestAdapterInfo() : null);
   console.log(
     `%c[WEBGPU-RAW] GPU selecionada → vendor=${info?.vendor ?? "?"} arch=${info?.architecture ?? "?"} device=${info?.device ?? "?"} desc="${info?.description ?? "?"}"`,
@@ -172,12 +183,6 @@ async function initWebGPU(canvas) {
   return { device, context, format };
 }
 
-// ================================================================
-// CARREGAMENTO DE ASSETS — Three.js APENAS para Draco/decodificação
-// de textura. Transforma cada mesh para o espaço de mundo (bake da
-// hierarquia) e devolve arrays Float32/Uint de geometria pura, mais
-// um mapa de imagens de textura únicas por material.
-// ================================================================
 function loadAssets(path) {
   return new Promise((resolve, reject) => {
     const draco = new DRACOLoader();
@@ -198,13 +203,6 @@ function loadAssets(path) {
         const geo = node.geometry.clone().applyMatrix4(node.matrixWorld);
         if (!geo.attributes.normal) geo.computeVertexNormals();
 
-        // Extração via getX/getY/getZ — funciona corretamente tanto para
-        // BufferAttribute quanto para InterleavedBufferAttribute. O Draco
-        // decodifica posição/normal/UV em um único InterleavedBuffer
-        // compartilhado por performance; ler ".array" direto retornaria o
-        // buffer intercalado INTEIRO (todos os atributos misturados) em vez
-        // dos valores deste atributo — era essa a causa da geometria
-        // fantasma ("vidro estilhaçado").
         const posAttr = geo.attributes.position;
         const norAttr = geo.attributes.normal;
         const uvAttr  = geo.attributes.uv;
@@ -220,9 +218,7 @@ function loadAssets(path) {
         }
         const raw = geo.index?.array;
 
-        // Validação defensiva: coordenadas não-finitas (NaN/Infinity) após
-        // o bake da transform — geralmente causadas por matrizes de mundo
-        // singulares (escala zero em nós auxiliares/invisíveis).
+        // Descarta coordenadas não-finitas — comuns em matrizes singulares (escala zero) após o bake.
         let hasNonFinite = false;
         for (let i = 0; i < pos.length; i++) {
           if (!Number.isFinite(pos[i])) { hasNonFinite = true; break; }
@@ -255,11 +251,7 @@ function loadAssets(path) {
           if (!texImages.has(texKey)) texImages.set(texKey, map.image);
         }
 
-        // Cenário A força material cinza DoubleSide (espelha main.js).
-        // Nos Cenários B/C, respeita o "side" original do material do GLTF —
-        // sem isso, faces traseiras de geometria fina (folhagem, tecido,
-        // toldos) competem na profundidade com as frontais (z-fighting).
-        const doubleSided = CONFIG_CENARIO === "a" || node.material?.side === THREE.DoubleSide;
+        const doubleSided = (!MODO_INSTANCING && CONFIG_CENARIO === "a") || node.material?.side === THREE.DoubleSide;
 
         meshes.push({ pos, nor, uv, indices, fmt, texKey, doubleSided });
       });
@@ -272,12 +264,8 @@ function loadAssets(path) {
   });
 }
 
-// ================================================================
-// UPLOAD DE GEOMETRIA PARA A GPU
-// Layout de vértice intercalado: [px,py,pz, nx,ny,nz, u,v] = 32 bytes.
-// Meshes sem UV (Cenário A) recebem (0,0) — irrelevante, pois usam a
-// textura placeholder de 1x1.
-// ================================================================
+
+// Layout de vértice intercalado [pos,normal,uv] = 32 bytes por vértice.
 function uploadMeshes(device, meshes) {
   // Agrupa por modo de culling para minimizar trocas de pipeline no loop de render.
   const ordered = [...meshes].sort((a, b) => Number(a.doubleSided) - Number(b.doubleSided));
@@ -313,12 +301,7 @@ function uploadMeshes(device, meshes) {
   });
 }
 
-// ================================================================
-// PIPELINES DE RENDERIZAÇÃO
-// Duas variantes compartilhando shader/layout: uma com culling de face
-// traseira ("back", para materiais de face única) e outra sem culling
-// ("none", para o Cenário A e materiais originalmente DoubleSide).
-// ================================================================
+
 function createPipelines(device, format) {
   const mod = device.createShaderModule({ code: WGSL });
   const uniformBGL = device.createBindGroupLayout({
@@ -330,7 +313,10 @@ function createPipelines(device, format) {
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
     ],
   });
-  const layout = device.createPipelineLayout({ bindGroupLayouts: [uniformBGL, textureBGL] });
+  const offsetBGL = device.createBindGroupLayout({
+    entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } }],
+  });
+  const layout = device.createPipelineLayout({ bindGroupLayouts: [uniformBGL, textureBGL, offsetBGL] });
 
   const makePipeline = (cullMode) => device.createRenderPipeline({
     layout,
@@ -353,8 +339,22 @@ function createPipelines(device, format) {
   return {
     pipelineCull:   makePipeline("back"),
     pipelineNoCull: makePipeline("none"),
-    uniformBGL, textureBGL,
+    uniformBGL, textureBGL, offsetBGL,
   };
+}
+
+function criarBindGroupOffset(device, offsetBGL, x, y, z) {
+  const buf = device.createBuffer({
+    size: 16,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    mappedAtCreation: true,
+  });
+  new Float32Array(buf.getMappedRange()).set([x, y, z, 0]);
+  buf.unmap();
+  return device.createBindGroup({
+    layout: offsetBGL,
+    entries: [{ binding: 0, resource: { buffer: buf } }],
+  });
 }
 
 function makeDepth(device, w, h) {
@@ -364,10 +364,8 @@ function makeDepth(device, w, h) {
   });
 }
 
-// ================================================================
-// TEXTURAS — upload das imagens decodificadas e bind group por
-// material único, mais um placeholder cinza para meshes sem textura.
-// ================================================================
+
+// upload das imagens decodificadas e bind group (material único)
 async function createTextureBindGroups(device, textureBGL, sampler, texImages) {
   const cache = new Map();
   for (const [key, image] of texImages) {
@@ -406,9 +404,6 @@ function createPlaceholderBindGroup(device, textureBGL, sampler) {
   });
 }
 
-// ================================================================
-// EXPORTAÇÃO — mesmo formato do main.js (Regra 4 do CLAUDE.md)
-// ================================================================
 function exportReport(data, loadTime, autoStartEpochMs) {
   if (!data.length) return;
 
@@ -423,7 +418,9 @@ function exportReport(data, loadTime, autoStartEpochMs) {
 
   let txt = "";
   txt += `API de Renderizacao: ${CONFIG_API.toUpperCase()}\n`;
-  txt += `Cenario: ${CONFIG_CENARIO.toUpperCase()}\n`;
+  txt += MODO_INSTANCING
+    ? `Cenario: INSTANCING (N=${CONFIG_DENSIDADE_INSTANCING})\n`
+    : `Cenario: ${CONFIG_CENARIO.toUpperCase()}\n`;
   txt += `Timestamp Unix de Inicio do Ensaio (ms): ${autoStartEpochMs}\n`;
   txt += `Tempo de Carregamento Inicial (Assets + Draco): ${(loadTime/1000).toFixed(2)} segundos (${loadTime.toFixed(2)} ms)\n`;
   txt += `Taxa de Quadros (FPS) Media: ${fpsMedio.toFixed(2)} FPS\n`;
@@ -440,18 +437,20 @@ function exportReport(data, loadTime, autoStartEpochMs) {
     txt += `${r.t.toFixed(0)},${r.fps.toFixed(1)},${r.ft.toFixed(2)},${r.dc}\n`;
   });
 
+  const nomeArquivo = MODO_INSTANCING
+    ? `relatorio_benchmark_${CONFIG_API}_instancing_n${CONFIG_DENSIDADE_INSTANCING}.txt`
+    : `relatorio_benchmark_${CONFIG_API}_cenario_${CONFIG_CENARIO}.txt`;
+
   const a = Object.assign(document.createElement("a"), {
     href:     URL.createObjectURL(new Blob([txt], { type: "text/plain;charset=utf-8;" })),
-    download: `relatorio_benchmark_${CONFIG_API}_cenario_${CONFIG_CENARIO}.txt`,
+    download: nomeArquivo,
   });
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
 }
 
-// ================================================================
-// ENTRADA PRINCIPAL
-// ================================================================
+
 async function main() {
   const canvas = Object.assign(document.createElement("canvas"), {
     width: window.innerWidth, height: window.innerHeight,
@@ -477,10 +476,20 @@ async function main() {
   overlay.textContent = "Enviando geometria e texturas para a GPU...";
   const gpuMeshes = uploadMeshes(device, meshData);
 
-  const { pipelineCull, pipelineNoCull, uniformBGL, textureBGL } = createPipelines(device, format);
-  // addressMode "repeat" — paridade com gl.REPEAT do WebGL-RAW. O padrão do
-  // WebGPU é "clamp-to-edge"; sem repeat, superfícies com UV telado (chão,
-  // paredes com textura repetida) ficam esticadas/sem padrão visível.
+  const { pipelineCull, pipelineNoCull, uniformBGL, textureBGL, offsetBGL } = createPipelines(device, format);
+
+  const gridPositions = MODO_INSTANCING
+    ? gerarPosicoesGridInstancing(CONFIG_DENSIDADE_INSTANCING, ladoGridInstancing, ESPACAMENTO_GRID_INSTANCING)
+    : [];
+  const waypointsAtivos = MODO_INSTANCING
+    ? gerarWaypointsOrbitaInstancing(ladoGridInstancing, ESPACAMENTO_GRID_INSTANCING)
+    : WAYPOINTS;
+
+  const zeroOffsetBindGroup = criarBindGroupOffset(device, offsetBGL, 0, 0, 0);
+  const offsetBindGroups = MODO_INSTANCING
+    ? gridPositions.map(([x, y, z]) => criarBindGroupOffset(device, offsetBGL, x, y, z))
+    : [];
+
   const sampler = device.createSampler({
     magFilter: "linear", minFilter: "linear", mipmapFilter: "linear",
     addressModeU: "repeat", addressModeV: "repeat",
@@ -506,7 +515,6 @@ async function main() {
     depth = makeDepth(device, canvas.width, canvas.height);
   });
 
-  // Estado do benchmark
   let running    = false;
   let metricsLog = [];
   let t0         = 0;
@@ -523,7 +531,7 @@ async function main() {
     }
   });
 
-  //  automação externa
+  // Sinaliza para scripts/automatizar_coleta.mjs que os assets estão prontos.
   window.__assetsReady = true;
 
   const fovY = 75 * Math.PI / 180; // mesmo campo de visão do main.js
@@ -534,20 +542,25 @@ async function main() {
 
     let eye, target;
 
+    const rotuloModo = MODO_INSTANCING
+      ? `Instancing N=${CONFIG_DENSIDADE_INSTANCING}`
+      : `Cenário ${CONFIG_CENARIO.toUpperCase()}`;
+    const drawCallsPorQuadro = MODO_INSTANCING ? gridPositions.length * gpuMeshes.length : gpuMeshes.length;
+
     if (running) {
       const elapsed = ts - t0;
       const t       = Math.min(elapsed / DURATION_MS, 1.0);
-      eye    = catmullRomPoint(WAYPOINTS, t);
-      target = catmullRomPoint(WAYPOINTS, Math.min(t + 0.05, 1.0));
+      eye    = catmullRomPoint(waypointsAtivos, t);
+      target = catmullRomPoint(waypointsAtivos, Math.min(t + 0.05, 1.0));
 
       const dt = ts - prevTs;
       prevTs   = ts;
 
       if (dt > 1) {
-        metricsLog.push({ t: elapsed, fps: 1000 / dt, ft: dt, dc: gpuMeshes.length });
+        metricsLog.push({ t: elapsed, fps: 1000 / dt, ft: dt, dc: drawCallsPorQuadro });
         const last = metricsLog[metricsLog.length - 1];
         overlay.textContent =
-          `WEBGPU-RAW | Cenário ${CONFIG_CENARIO.toUpperCase()} | [SPACE] parar\n` +
+          `WEBGPU-RAW | ${rotuloModo} | [SPACE] parar\n` +
           `FPS: ${last.fps.toFixed(1)} | Frame: ${last.ft.toFixed(2)}ms\n` +
           `Draw Calls: ${last.dc} | Progresso: ${(t * 100).toFixed(1)}%`;
       }
@@ -556,18 +569,18 @@ async function main() {
         running = false;
         exportReport(metricsLog, loadTime, autoStartEpochMs);
         overlay.textContent =
-          `WEBGPU-RAW | Cenário ${CONFIG_CENARIO.toUpperCase()}\n` +
+          `WEBGPU-RAW | ${rotuloModo}\n` +
           `Benchmark concluído — relatório baixado.\n` +
           `[SPACE] para iniciar novamente`;
       }
     } else {
       // Câmera parada no ponto inicial enquanto aguarda [SPACE]
-      eye    = catmullRomPoint(WAYPOINTS, 0);
-      target = catmullRomPoint(WAYPOINTS, 0.05);
+      eye    = catmullRomPoint(waypointsAtivos, 0);
+      target = catmullRomPoint(waypointsAtivos, 0.05);
 
       if (!metricsLog.length) {
         overlay.textContent =
-          `WEBGPU-RAW | Cenário ${CONFIG_CENARIO.toUpperCase()}\n` +
+          `WEBGPU-RAW | ${rotuloModo}\n` +
           `Meshes: ${gpuMeshes.length} | Texturas: ${texBindGroups.size} | Carregamento: ${loadTime.toFixed(0)}ms\n` +
           `[SPACE] iniciar benchmark (60s)`;
       }
@@ -577,7 +590,6 @@ async function main() {
     const viewProj = mat4Mul(proj, view);
     device.queue.writeBuffer(ubo, 0, viewProj);
 
-    // Encode e submit do frame
     const enc  = device.createCommandEncoder();
     const pass = enc.beginRenderPass({
       colorAttachments: [{
@@ -596,16 +608,35 @@ async function main() {
 
     pass.setBindGroup(0, cameraBindGroup);
     let currentPipeline = null;
-    for (const { vb, ib, indexCount, fmt, texKey, doubleSided } of gpuMeshes) {
-      const wanted = doubleSided ? pipelineNoCull : pipelineCull;
-      if (wanted !== currentPipeline) {
-        pass.setPipeline(wanted);
-        currentPipeline = wanted;
+    if (MODO_INSTANCING) {
+      // 1 draw call real por (cópia x primitivo da vespa)
+      for (let gi = 0; gi < gridPositions.length; gi++) {
+        pass.setBindGroup(2, offsetBindGroups[gi]);
+        for (const { vb, ib, indexCount, fmt, texKey, doubleSided } of gpuMeshes) {
+          const wanted = doubleSided ? pipelineNoCull : pipelineCull;
+          if (wanted !== currentPipeline) {
+            pass.setPipeline(wanted);
+            currentPipeline = wanted;
+          }
+          pass.setBindGroup(1, texKey ? texBindGroups.get(texKey) : placeholderBindGroup);
+          pass.setVertexBuffer(0, vb);
+          pass.setIndexBuffer(ib, fmt);
+          pass.drawIndexed(indexCount);
+        }
       }
-      pass.setBindGroup(1, texKey ? texBindGroups.get(texKey) : placeholderBindGroup);
-      pass.setVertexBuffer(0, vb);
-      pass.setIndexBuffer(ib, fmt);
-      pass.drawIndexed(indexCount);
+    } else {
+      pass.setBindGroup(2, zeroOffsetBindGroup);
+      for (const { vb, ib, indexCount, fmt, texKey, doubleSided } of gpuMeshes) {
+        const wanted = doubleSided ? pipelineNoCull : pipelineCull;
+        if (wanted !== currentPipeline) {
+          pass.setPipeline(wanted);
+          currentPipeline = wanted;
+        }
+        pass.setBindGroup(1, texKey ? texBindGroups.get(texKey) : placeholderBindGroup);
+        pass.setVertexBuffer(0, vb);
+        pass.setIndexBuffer(ib, fmt);
+        pass.drawIndexed(indexCount);
+      }
     }
     pass.end();
     device.queue.submit([enc.finish()]);

@@ -1,21 +1,21 @@
-// Renderizador WebGL Puro — Contrapartida simétrica do WebGPU-RAW
-// Three.js é usado EXCLUSIVAMENTE para descompressão Draco/GLB e decodificação
-// de texturas embutidas. Toda a renderização é feita via WebGL2 (sem
-// framework). Suporta os 3 cenários via "?cenario=a|b|c".
+// WebGL puro (WebGL2); Three.js só para decodificar Draco/GLB e texturas.
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 
-// ================================================================
-// CONFIGURAÇÃO
-// ================================================================
 const params = new URLSearchParams(window.location.search);
 const CONFIG_API     = "webgl-raw";
 const CONFIG_CENARIO = params.get("cenario")?.toLowerCase() || "a";
 const DURATION_MS    = 60000;
+// Instancing de estresse: ?densidade=500|2000|5000 — ver main.js para a justificativa completa.
+const CONFIG_DENSIDADE_INSTANCING = parseInt(params.get("densidade") || "0", 10);
+if (![0, 500, 2000, 5000].includes(CONFIG_DENSIDADE_INSTANCING)) {
+  throw new Error(`Parâmetro "densidade" inválido: "${params.get("densidade")}". Use 500, 2000 ou 5000.`);
+}
+const MODO_INSTANCING = CONFIG_DENSIDADE_INSTANCING > 0;
 
-if (!["a", "b", "c", "d"].includes(CONFIG_CENARIO)) {
+if (!MODO_INSTANCING && !["a", "b", "c", "d"].includes(CONFIG_CENARIO)) {
   throw new Error(`Parâmetro "cenario" inválido: "${CONFIG_CENARIO}".`);
 }
 
@@ -26,26 +26,51 @@ const caminhosCenarios = {
   // Cenário D: Bistro Exterior, texturas 2048px + Draco — extra ao escopo original.
   d: "/CenarioBistroD.glb",
 };
-const ASSET_PATH = caminhosCenarios[CONFIG_CENARIO];
+const ASSET_PATH = MODO_INSTANCING ? "/objetos/vespa.glb" : caminhosCenarios[CONFIG_CENARIO];
 
-document.title = `Benchmark | WEBGL-RAW | Cenário ${CONFIG_CENARIO.toUpperCase()}`;
+document.title = MODO_INSTANCING
+  ? `Benchmark | WEBGL-RAW | Instancing N=${CONFIG_DENSIDADE_INSTANCING}`
+  : `Benchmark | WEBGL-RAW | Cenário ${CONFIG_CENARIO.toUpperCase()}`;
 
-// ================================================================
-// TRILHO DA CÂMERA — idêntico ao main.js e ao main-raw-webgpu.js
-// ================================================================
+// Grid e trilho: mesma calibração do main.js; array [x,y,z] reaproveita catmullRomPoint().
+const ESPACAMENTO_GRID_INSTANCING = 4;
+const ladoGridInstancing = MODO_INSTANCING ? Math.ceil(Math.cbrt(CONFIG_DENSIDADE_INSTANCING)) : 0;
+
+function gerarPosicoesGridInstancing(n, lado, espacamento) {
+  const offset = (lado - 1) / 2;
+  const posicoes = [];
+  for (let i = 0; i < n; i++) {
+    const x = i % lado;
+    const y = Math.floor(i / lado) % lado;
+    const z = Math.floor(i / (lado * lado));
+    posicoes.push([(x - offset) * espacamento, (y - offset) * espacamento, (z - offset) * espacamento]);
+  }
+  return posicoes;
+}
+
+function gerarWaypointsOrbitaInstancing(lado, espacamento) {
+  const extensao = lado * espacamento;
+  const raio = extensao * 0.9;
+  const altura = extensao * 0.55;
+  const NUM_PONTOS = 12;
+  const pontos = [];
+  for (let i = 0; i < NUM_PONTOS; i++) {
+    const angulo = (i / NUM_PONTOS) * Math.PI * 2;
+    pontos.push([Math.cos(angulo) * raio, altura, Math.sin(angulo) * raio]);
+  }
+  return pontos;
+}
+
+// Idêntico ao trilho do main.js — não alterar.
 const WAYPOINTS = [
   [11.0, 2.4, 14.0],  [8.0, 2.4, 10.0],
-  [5.0,  2.4,  6.0],  [2.0, 2.3,  2.1],
-  [0.0,  2.2, -1.0],  [-2.0,  2.2, -4.0],
+  [5.0,  2.4,  6.0],  [3.0, 2.3,  5.0],
+  [-4.0, 2.2,  2.0],  [-4.5,  2.2, -3.0],
   [-4.5, 2.2, -6.5],  [-7.0,  2.2, -7.5],
   [-9.5, 2.2, -8.2],  [-12.0, 2.2, -8.5],
   [-14.5, 2.3, -7.8], [-16.0, 2.4, -6.5],
 ];
 
-// ================================================================
-// MATEMÁTICA VETORIAL E MATRICIAL
-// Column-major; NDC OpenGL/WebGL com profundidade [-1, 1].
-// ================================================================
 const v3sub   = (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
 const v3dot   = (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
 const v3cross = (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
@@ -85,10 +110,7 @@ function mat4Mul(a, b) {
   return o;
 }
 
-// ================================================================
-// INTERPOLAÇÃO CATMULL-ROM
-// Reproduz THREE.CatmullRomCurve3 com closed=false.
-// ================================================================
+// Reproduz THREE.CatmullRomCurve3 (closed=false).
 function catmullRomPoint(waypoints, t) {
   const n  = waypoints.length;
   const sc = Math.max(0, Math.min(t, 0.9999)) * (n - 1);
@@ -109,15 +131,13 @@ function catmullRomPoint(waypoints, t) {
   );
 }
 
-// ================================================================
-// SHADERS GLSL ES 3.00 (WebGL2)
-// Textura de cor base (uTex). Cenário A / materiais sem mapa usam um
-// placeholder cinza 1x1, mantendo um único pipeline para os 3 cenários.
-// ================================================================
+// Cenário A sem textura usa placeholder cinza 1x1 — um único pipeline para todos.
 const VERT_SRC = `#version 300 es
 precision highp float;
 
 uniform mat4 uViewProj;
+// Offset do grid de instancing; fica (0,0,0) nos Cenários A-D — sem efeito lá.
+uniform vec3 uOffset;
 
 in vec3 aPosition;
 in vec3 aNormal;
@@ -127,7 +147,7 @@ out vec3 vNormal;
 out vec2 vUV;
 
 void main() {
-  gl_Position = uViewProj * vec4(aPosition, 1.0);
+  gl_Position = uViewProj * vec4(aPosition + uOffset, 1.0);
   vNormal = aNormal;
   vUV = aUV;
 }
@@ -150,15 +170,12 @@ void main() {
 }
 `;
 
-// ================================================================
-// INICIALIZAÇÃO WEBGL2 — powerPreference obrigatório (paridade com main.js)
-// ================================================================
+// powerPreference obrigatório — paridade com Regra 2 do CLAUDE.md.
 function initWebGL(canvas) {
   const gl = canvas.getContext("webgl2", { antialias: true, powerPreference: "high-performance" });
   if (!gl) throw new Error("WebGL2 não suportado neste navegador.");
 
-  // Diagnóstico de GPU — confirma a cada execução qual GPU física o ANGLE
-  // selecionou (Regra 2 do CLAUDE.md exige a dGPU, não a iGPU Intel).
+  // Confirma qual GPU física o ANGLE selecionou (Regra 2 exige a dGPU).
   const dbg = gl.getExtension("WEBGL_debug_renderer_info");
   if (dbg) {
     const vendor   = gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL);
@@ -198,12 +215,7 @@ function createProgram(gl) {
   return program;
 }
 
-// ================================================================
-// CARREGAMENTO DE ASSETS — Three.js APENAS para Draco/decodificação
-// de textura. Transforma cada mesh para o espaço de mundo (bake da
-// hierarquia) e devolve arrays Float32/Uint de geometria pura, mais
-// um mapa de imagens de textura únicas por material.
-// ================================================================
+// Three.js só decodifica Draco/textura; bake da transform do nó em arrays puros.
 function loadAssets(path) {
   return new Promise((resolve, reject) => {
     const draco = new DRACOLoader();
@@ -224,13 +236,7 @@ function loadAssets(path) {
         const geo = node.geometry.clone().applyMatrix4(node.matrixWorld);
         if (!geo.attributes.normal) geo.computeVertexNormals();
 
-        // Extração via getX/getY/getZ — funciona corretamente tanto para
-        // BufferAttribute quanto para InterleavedBufferAttribute. O Draco
-        // decodifica posição/normal/UV em um único InterleavedBuffer
-        // compartilhado por performance; ler ".array" direto retornaria o
-        // buffer intercalado INTEIRO (todos os atributos misturados) em vez
-        // dos valores deste atributo — era essa a causa da geometria
-        // fantasma ("vidro estilhaçado").
+        // getX/getY/getZ, não ".array" — Draco intercala atributos; causava a geometria "vidro estilhaçado".
         const posAttr = geo.attributes.position;
         const norAttr = geo.attributes.normal;
         const uvAttr  = geo.attributes.uv;
@@ -246,9 +252,7 @@ function loadAssets(path) {
         }
         const raw = geo.index?.array;
 
-        // Validação defensiva: coordenadas não-finitas (NaN/Infinity) após
-        // o bake da transform — geralmente causadas por matrizes de mundo
-        // singulares (escala zero em nós auxiliares/invisíveis).
+        // Descarta coordenadas não-finitas — comuns em matrizes singulares (escala zero) após o bake.
         let hasNonFinite = false;
         for (let i = 0; i < pos.length; i++) {
           if (!Number.isFinite(pos[i])) { hasNonFinite = true; break; }
@@ -281,11 +285,9 @@ function loadAssets(path) {
           if (!texImages.has(texKey)) texImages.set(texKey, map.image);
         }
 
-        // Cenário A força material cinza DoubleSide (espelha main.js).
-        // Nos Cenários B/C, respeita o "side" original do material do GLTF —
-        // sem isso, faces traseiras de geometria fina (folhagem, tecido,
-        // toldos) competem na profundidade com as frontais (z-fighting).
-        const doubleSided = CONFIG_CENARIO === "a" || node.material?.side === THREE.DoubleSide;
+        // B/C respeitam "side" do GLTF — evita z-fighting em geometria fina (folhagem, toldos).
+        // !MODO_INSTANCING evita forçar DoubleSide na vespa (CONFIG_CENARIO fica "a" por padrão).
+        const doubleSided = (!MODO_INSTANCING && CONFIG_CENARIO === "a") || node.material?.side === THREE.DoubleSide;
 
         meshes.push({ pos, nor, uv, indices, fmt, texKey, doubleSided });
       });
@@ -298,12 +300,7 @@ function loadAssets(path) {
   });
 }
 
-// ================================================================
-// UPLOAD DE GEOMETRIA PARA A GPU
-// Layout de vértice intercalado: [px,py,pz, nx,ny,nz, u,v] = 32 bytes.
-// Meshes sem UV (Cenário A) recebem (0,0) — irrelevante, pois usam a
-// textura placeholder de 1x1.
-// ================================================================
+// Vértice intercalado [pos,normal,uv]=32 bytes; sem UV usa (0,0) com textura placeholder.
 function uploadMeshes(gl, meshes) {
   // Agrupa por modo de culling para minimizar trocas de estado no loop de render.
   const ordered = [...meshes].sort((a, b) => Number(a.doubleSided) - Number(b.doubleSided));
@@ -346,10 +343,6 @@ function uploadMeshes(gl, meshes) {
   });
 }
 
-// ================================================================
-// TEXTURAS — upload das imagens decodificadas, mais um placeholder
-// cinza para meshes sem textura (Cenário A).
-// ================================================================
 function createGLTexture(gl, image) {
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -377,9 +370,7 @@ function createTextureCache(gl, texImages) {
   return cache;
 }
 
-// ================================================================
-// EXPORTAÇÃO — mesmo formato do main.js e do main-raw-webgpu.js
-// ================================================================
+// Mesmo formato de relatório do main.js e main-raw-webgpu.js.
 function exportReport(data, loadTime, autoStartEpochMs) {
   if (!data.length) return;
 
@@ -394,7 +385,9 @@ function exportReport(data, loadTime, autoStartEpochMs) {
 
   let txt = "";
   txt += `API de Renderizacao: ${CONFIG_API.toUpperCase()}\n`;
-  txt += `Cenario: ${CONFIG_CENARIO.toUpperCase()}\n`;
+  txt += MODO_INSTANCING
+    ? `Cenario: INSTANCING (N=${CONFIG_DENSIDADE_INSTANCING})\n`
+    : `Cenario: ${CONFIG_CENARIO.toUpperCase()}\n`;
   txt += `Timestamp Unix de Inicio do Ensaio (ms): ${autoStartEpochMs}\n`;
   txt += `Tempo de Carregamento Inicial (Assets + Draco): ${(loadTime/1000).toFixed(2)} segundos (${loadTime.toFixed(2)} ms)\n`;
   txt += `Taxa de Quadros (FPS) Media: ${fpsMedio.toFixed(2)} FPS\n`;
@@ -411,18 +404,19 @@ function exportReport(data, loadTime, autoStartEpochMs) {
     txt += `${r.t.toFixed(0)},${r.fps.toFixed(1)},${r.ft.toFixed(2)},${r.dc}\n`;
   });
 
+  const nomeArquivo = MODO_INSTANCING
+    ? `relatorio_benchmark_${CONFIG_API}_instancing_n${CONFIG_DENSIDADE_INSTANCING}.txt`
+    : `relatorio_benchmark_${CONFIG_API}_cenario_${CONFIG_CENARIO}.txt`;
+
   const a = Object.assign(document.createElement("a"), {
     href:     URL.createObjectURL(new Blob([txt], { type: "text/plain;charset=utf-8;" })),
-    download: `relatorio_benchmark_${CONFIG_API}_cenario_${CONFIG_CENARIO}.txt`,
+    download: nomeArquivo,
   });
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
 }
 
-// ================================================================
-// ENTRADA PRINCIPAL
-// ================================================================
 async function main() {
   const canvas = Object.assign(document.createElement("canvas"), {
     width: window.innerWidth, height: window.innerHeight,
@@ -453,13 +447,20 @@ async function main() {
   const program      = createProgram(gl);
   const uViewProjLoc = gl.getUniformLocation(program, "uViewProj");
   const uTexLoc      = gl.getUniformLocation(program, "uTex");
+  const uOffsetLoc   = gl.getUniformLocation(program, "uOffset");
+
+  const gridPositions = MODO_INSTANCING
+    ? gerarPosicoesGridInstancing(CONFIG_DENSIDADE_INSTANCING, ladoGridInstancing, ESPACAMENTO_GRID_INSTANCING)
+    : [];
+  const waypointsAtivos = MODO_INSTANCING
+    ? gerarWaypointsOrbitaInstancing(ladoGridInstancing, ESPACAMENTO_GRID_INSTANCING)
+    : WAYPOINTS;
 
   window.addEventListener("resize", () => {
     canvas.width  = window.innerWidth;
     canvas.height = window.innerHeight;
   });
 
-  // Estado do benchmark
   let running    = false;
   let metricsLog = [];
   let t0         = 0;
@@ -476,8 +477,7 @@ async function main() {
     }
   });
 
-  //  ( scripts/automatizar_coleta)
-  
+  // Sinaliza para scripts/automatizar_coleta.mjs que os assets estão prontos.
   window.__assetsReady = true;
 
   const fovY = 75 * Math.PI / 180; // mesmo campo de visão do main.js
@@ -488,20 +488,25 @@ async function main() {
 
     let eye, target;
 
+    const rotuloModo = MODO_INSTANCING
+      ? `Instancing N=${CONFIG_DENSIDADE_INSTANCING}`
+      : `Cenário ${CONFIG_CENARIO.toUpperCase()}`;
+    const drawCallsPorQuadro = MODO_INSTANCING ? gridPositions.length * gpuMeshes.length : gpuMeshes.length;
+
     if (running) {
       const elapsed = ts - t0;
       const t       = Math.min(elapsed / DURATION_MS, 1.0);
-      eye    = catmullRomPoint(WAYPOINTS, t);
-      target = catmullRomPoint(WAYPOINTS, Math.min(t + 0.05, 1.0));
+      eye    = catmullRomPoint(waypointsAtivos, t);
+      target = catmullRomPoint(waypointsAtivos, Math.min(t + 0.05, 1.0));
 
       const dt = ts - prevTs;
       prevTs   = ts;
 
       if (dt > 1) {
-        metricsLog.push({ t: elapsed, fps: 1000 / dt, ft: dt, dc: gpuMeshes.length });
+        metricsLog.push({ t: elapsed, fps: 1000 / dt, ft: dt, dc: drawCallsPorQuadro });
         const last = metricsLog[metricsLog.length - 1];
         overlay.textContent =
-          `WEBGL-RAW | Cenário ${CONFIG_CENARIO.toUpperCase()} | [SPACE] parar\n` +
+          `WEBGL-RAW | ${rotuloModo} | [SPACE] parar\n` +
           `FPS: ${last.fps.toFixed(1)} | Frame: ${last.ft.toFixed(2)}ms\n` +
           `Draw Calls: ${last.dc} | Progresso: ${(t * 100).toFixed(1)}%`;
       }
@@ -510,18 +515,18 @@ async function main() {
         running = false;
         exportReport(metricsLog, loadTime, autoStartEpochMs);
         overlay.textContent =
-          `WEBGL-RAW | Cenário ${CONFIG_CENARIO.toUpperCase()}\n` +
+          `WEBGL-RAW | ${rotuloModo}\n` +
           `Benchmark concluído — relatório baixado.\n` +
           `[SPACE] para iniciar novamente`;
       }
     } else {
       // Câmera parada no ponto inicial enquanto aguarda [SPACE]
-      eye    = catmullRomPoint(WAYPOINTS, 0);
-      target = catmullRomPoint(WAYPOINTS, 0.05);
+      eye    = catmullRomPoint(waypointsAtivos, 0);
+      target = catmullRomPoint(waypointsAtivos, 0.05);
 
       if (!metricsLog.length) {
         overlay.textContent =
-          `WEBGL-RAW | Cenário ${CONFIG_CENARIO.toUpperCase()}\n` +
+          `WEBGL-RAW | ${rotuloModo}\n` +
           `Meshes: ${gpuMeshes.length} | Texturas: ${texCache.size} | Carregamento: ${loadTime.toFixed(0)}ms\n` +
           `[SPACE] iniciar benchmark (60s)`;
       }
@@ -542,18 +547,34 @@ async function main() {
     gl.activeTexture(gl.TEXTURE0);
     gl.uniform1i(uTexLoc, 0);
 
-    // gpuMeshes está ordenado por doubleSided (false primeiro), então o
-    // estado de culling alterna no máximo uma vez por frame.
+    // gpuMeshes ordenado por doubleSided — culling alterna no máximo uma vez por frame.
     let cullEnabled = null;
-    for (const { vao, indexCount, glType, texKey, doubleSided } of gpuMeshes) {
-      const wantCull = !doubleSided;
-      if (wantCull !== cullEnabled) {
-        if (wantCull) gl.enable(gl.CULL_FACE); else gl.disable(gl.CULL_FACE);
-        cullEnabled = wantCull;
+    if (MODO_INSTANCING) {
+      // 1 draw call por (cópia × primitivo); uOffset muda, VAO/textura são reaproveitados.
+      for (const [ox, oy, oz] of gridPositions) {
+        gl.uniform3f(uOffsetLoc, ox, oy, oz);
+        for (const { vao, indexCount, glType, texKey, doubleSided } of gpuMeshes) {
+          const wantCull = !doubleSided;
+          if (wantCull !== cullEnabled) {
+            if (wantCull) gl.enable(gl.CULL_FACE); else gl.disable(gl.CULL_FACE);
+            cullEnabled = wantCull;
+          }
+          gl.bindTexture(gl.TEXTURE_2D, texKey ? texCache.get(texKey) : placeholderTex);
+          gl.bindVertexArray(vao);
+          gl.drawElements(gl.TRIANGLES, indexCount, glType, 0);
+        }
       }
-      gl.bindTexture(gl.TEXTURE_2D, texKey ? texCache.get(texKey) : placeholderTex);
-      gl.bindVertexArray(vao);
-      gl.drawElements(gl.TRIANGLES, indexCount, glType, 0);
+    } else {
+      for (const { vao, indexCount, glType, texKey, doubleSided } of gpuMeshes) {
+        const wantCull = !doubleSided;
+        if (wantCull !== cullEnabled) {
+          if (wantCull) gl.enable(gl.CULL_FACE); else gl.disable(gl.CULL_FACE);
+          cullEnabled = wantCull;
+        }
+        gl.bindTexture(gl.TEXTURE_2D, texKey ? texCache.get(texKey) : placeholderTex);
+        gl.bindVertexArray(vao);
+        gl.drawElements(gl.TRIANGLES, indexCount, glType, 0);
+      }
     }
 
     requestAnimationFrame(frame);
