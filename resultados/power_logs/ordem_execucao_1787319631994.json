@@ -1,0 +1,422 @@
+[
+  {
+    "modo": "webgl",
+    "cenario": "a",
+    "run": 1
+  },
+  {
+    "modo": "webgl",
+    "cenario": "d",
+    "run": 1
+  },
+  {
+    "modo": "webgl",
+    "cenario": "b",
+    "run": 1
+  },
+  {
+    "modo": "webgl",
+    "cenario": "n500",
+    "run": 1
+  },
+  {
+    "modo": "webgl-raw",
+    "cenario": "n500",
+    "run": 1
+  },
+  {
+    "modo": "webgpu-raw",
+    "cenario": "b",
+    "run": 1
+  },
+  {
+    "modo": "webgpu",
+    "cenario": "n500",
+    "run": 1
+  },
+  {
+    "modo": "webgl",
+    "cenario": "c",
+    "run": 1
+  },
+  {
+    "modo": "webgpu",
+    "cenario": "n5000",
+    "run": 1
+  },
+  {
+    "modo": "webgpu-raw",
+    "cenario": "d",
+    "run": 1
+  },
+  {
+    "modo": "webgl-raw",
+    "cenario": "n5000",
+    "run": 1
+  },
+  {
+    "modo": "webgpu",
+    "cenario": "d",
+    "run": 1
+  },
+  {
+    "modo": "webgl-raw",
+    "cenario": "n2000",
+    "run": 1
+  },
+  {
+    "modo": "webgpu-raw",
+    "cenario": "n5000",
+    "run": 1
+  },
+  {
+    "modo": "webgpu",
+    "cenario": "a",
+    "run": 1
+  },
+  {
+    "modo": "webgl",
+    "cenario": "n5000",
+    "run": 1
+  },
+  {
+    "modo": "webgl-raw",
+    "cenario": "a",
+    "run": 1
+  },
+  {
+    "modo": "webgpu",
+    "cenario": "n2000",
+    "run": 1
+  },
+  {
+    "modo": "webgl-raw",
+    "cenario": "d",
+    "run": 1
+  },
+  {
+    "modo": "webgl",
+    "cenario": "n2000",
+    "run": 1
+  },
+  {
+    "modo": "webgl-raw",
+    "cenario": "b",
+    "run": 1
+  },
+  {
+    "modo": "webgpu-raw",
+    "cenario": "n2000",
+    "run": 1
+  },
+  {
+    "modo": "webgl-raw",
+    "cenario": "c",
+    "run": 1
+  },
+  {
+    "modo": "webgpu",
+    "cenario": "c",
+    "run": 1
+  },
+  {
+    "modo": "webgpu-raw",
+    "cenario": "c",
+    "run": 1
+  },
+  {
+    "modo": "webgpu-raw",
+    "cenario": "a",
+    "run": 1
+  },
+  {
+    "modo": "webgpu-raw",
+    "cenario": "n500",
+    "run": 1
+  },
+  {
+    "modo": "webgpu",
+    "cenario": "b",
+    "run": 1
+  },
+  {
+    "modo": "webgpu-raw",
+    "cenario": "b",
+    "run": 2
+  },
+  {
+    "modo": "webgl",
+    "cenario": "n500",
+    "run": 2
+  },
+  {
+    "modo": "webgl",
+    "cenario": "d",
+    "run": 2
+  },
+  {
+    "modo": "webgpu",
+    "cenario": "c",
+    "run": 2
+  },
+  {
+    "modo": "webgl-raw",
+    "cenario": "d",
+    "run": 2
+  },
+  {
+    "modo": "webgpu-raw",
+    "cenario": "a",
+    "run": 2
+  },
+  {
+    "modo": "webgl-raw",
+    "cenario": "c",
+    "run": 2
+  },
+  {
+    "modo": "webgl-raw",
+    "cenario": "a",
+    "run": 2
+  },
+  {
+    "modo": "webgpu-raw",
+    "cenario": "d",
+    "run": 2
+  },
+  {
+    "modo": "webgl-raw",
+    "cenario": "n2000",
+    "run": 2
+  },
+  {
+    "modo": "webgl",
+    "cenario": "n5000",
+    "run": 2
+  },
+  {
+    "modo": "webgpu",
+    "cenario": "n5000",
+    "run": 2
+  },
+  {
+    "modo": "webgpu-raw",
+    "cenario": "n500",
+    "run": 2
+  },
+  {
+    "modo": "webgl",
+    "cenario": "c",
+    "run": 2
+  },
+  {
+    "modo": "webgl",
+    "cenario": "n2000",
+    "run": 2
+  },
+  {
+    "modo": "webgpu",
+    "cenario": "b",
+    "run": 2
+  },
+  {
+    "modo": "webgl",
+    "cenario": "a",
+    "run": 2
+  },
+  {
+    "modo": "webgpu",
+    "cenario": "n2000",
+    "run": 2
+  },
+  {
+    "modo": "webgl-raw",
+    "cenario": "n500",
+    "run": 2
+  },
+  {
+    "modo": "webgpu",
+    "cenario": "n500",
+    "run": 2
+  },
+  {
+    "modo": "webgpu-raw",
+    "cenario": "c",
+    "run": 2
+  },
+  {
+    "modo": "webgpu-raw",
+    "cenario": "n5000",
+    "run": 2
+  },
+  {
+    "modo": "webgpu",
+    "cenario": "a",
+    "run": 2
+  },
+  {
+    "modo": "webgpu-raw",
+    "cenario": "n2000",
+    "run": 2
+  },
+  {
+    "modo": "webgl",
+    "cenario": "b",
+    "run": 2
+  },
+  {
+    "modo": "webgl-raw",
+    "cenario": "n5000",
+    "run": 2
+  },
+  {
+    "modo": "webgpu",
+    "cenario": "d",
+    "run": 2
+  },
+  {
+    "modo": "webgl-raw",
+    "cenario": "b",
+    "run": 2
+  },
+  {
+    "modo": "webgpu",
+    "cenario": "n500",
+    "run": 3
+  },
+  {
+    "modo": "webgl",
+    "cenario": "n2000",
+    "run": 3
+  },
+  {
+    "modo": "webgpu",
+    "cenario": "c",
+    "run": 3
+  },
+  {
+    "modo": "webgl-raw",
+    "cenario": "n500",
+    "run": 3
+  },
+  {
+    "modo": "webgpu-raw",
+    "cenario": "n5000",
+    "run": 3
+  },
+  {
+    "modo": "webgl",
+    "cenario": "d",
+    "run": 3
+  },
+  {
+    "modo": "webgpu-raw",
+    "cenario": "n2000",
+    "run": 3
+  },
+  {
+    "modo": "webgpu",
+    "cenario": "n2000",
+    "run": 3
+  },
+  {
+    "modo": "webgpu-raw",
+    "cenario": "c",
+    "run": 3
+  },
+  {
+    "modo": "webgpu",
+    "cenario": "n5000",
+    "run": 3
+  },
+  {
+    "modo": "webgl-raw",
+    "cenario": "c",
+    "run": 3
+  },
+  {
+    "modo": "webgpu",
+    "cenario": "a",
+    "run": 3
+  },
+  {
+    "modo": "webgpu",
+    "cenario": "b",
+    "run": 3
+  },
+  {
+    "modo": "webgpu-raw",
+    "cenario": "a",
+    "run": 3
+  },
+  {
+    "modo": "webgl-raw",
+    "cenario": "b",
+    "run": 3
+  },
+  {
+    "modo": "webgpu-raw",
+    "cenario": "d",
+    "run": 3
+  },
+  {
+    "modo": "webgl",
+    "cenario": "a",
+    "run": 3
+  },
+  {
+    "modo": "webgl",
+    "cenario": "b",
+    "run": 3
+  },
+  {
+    "modo": "webgpu",
+    "cenario": "d",
+    "run": 3
+  },
+  {
+    "modo": "webgl-raw",
+    "cenario": "n2000",
+    "run": 3
+  },
+  {
+    "modo": "webgl",
+    "cenario": "c",
+    "run": 3
+  },
+  {
+    "modo": "webgl-raw",
+    "cenario": "a",
+    "run": 3
+  },
+  {
+    "modo": "webgl-raw",
+    "cenario": "d",
+    "run": 3
+  },
+  {
+    "modo": "webgl",
+    "cenario": "n5000",
+    "run": 3
+  },
+  {
+    "modo": "webgl-raw",
+    "cenario": "n5000",
+    "run": 3
+  },
+  {
+    "modo": "webgpu-raw",
+    "cenario": "b",
+    "run": 3
+  },
+  {
+    "modo": "webgl",
+    "cenario": "n500",
+    "run": 3
+  },
+  {
+    "modo": "webgpu-raw",
+    "cenario": "n500",
+    "run": 3
+  }
+]

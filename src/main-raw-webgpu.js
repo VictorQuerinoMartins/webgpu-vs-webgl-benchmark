@@ -8,7 +8,7 @@ const CONFIG_API     = "webgpu-raw";
 const CONFIG_CENARIO = params.get("cenario")?.toLowerCase() || "a";
 const DURATION_MS    = 60000;
 
-// Cenário de estresse de Draw Calls: ?densidade=500|2000|5000 (mesma cena/grid/trilho, só reimplementados em WebGPU puro).
+
 const CONFIG_DENSIDADE_INSTANCING = parseInt(params.get("densidade") || "0", 10);
 if (![0, 500, 2000, 5000].includes(CONFIG_DENSIDADE_INSTANCING)) {
   throw new Error(`Parâmetro "densidade" inválido: "${params.get("densidade")}". Use 500, 2000 ou 5000.`);
@@ -218,7 +218,7 @@ function loadAssets(path) {
         }
         const raw = geo.index?.array;
 
-        // Descarta coordenadas não-finitas — comuns em matrizes singulares (escala zero) após o bake.
+        // descarta coordenadas não-finitas — comuns em matrizes singulares
         let hasNonFinite = false;
         for (let i = 0; i < pos.length; i++) {
           if (!Number.isFinite(pos[i])) { hasNonFinite = true; break; }
@@ -267,7 +267,6 @@ function loadAssets(path) {
 
 // Layout de vértice intercalado [pos,normal,uv] = 32 bytes por vértice.
 function uploadMeshes(device, meshes) {
-  // Agrupa por modo de culling para minimizar trocas de pipeline no loop de render.
   const ordered = [...meshes].sort((a, b) => Number(a.doubleSided) - Number(b.doubleSided));
   return ordered.map(({ pos, nor, uv, indices, fmt, texKey, doubleSided }) => {
     const vCount      = pos.length / 3;
@@ -287,7 +286,7 @@ function uploadMeshes(device, meshes) {
     new Float32Array(vb.getMappedRange()).set(interleaved);
     vb.unmap();
 
-    // Index buffer alinhado em 4 bytes (requisito WebGPU)
+    // index buffer alinhado em 4 bytes (requisito WebGPU)
     const ibBytes = Math.ceil(indices.byteLength / 4) * 4;
     const ib = device.createBuffer({
       size: ibBytes,
@@ -531,7 +530,6 @@ async function main() {
     }
   });
 
-  // Sinaliza para scripts/automatizar_coleta.mjs que os assets estão prontos.
   window.__assetsReady = true;
 
   const fovY = 75 * Math.PI / 180; // mesmo campo de visão do main.js
@@ -551,7 +549,7 @@ async function main() {
       const elapsed = ts - t0;
       const t       = Math.min(elapsed / DURATION_MS, 1.0);
       eye    = catmullRomPoint(waypointsAtivos, t);
-      target = catmullRomPoint(waypointsAtivos, Math.min(t + 0.05, 1.0));
+      target = MODO_INSTANCING ? [0, 0, 0] : catmullRomPoint(waypointsAtivos, Math.min(t + 0.05, 1.0));
 
       const dt = ts - prevTs;
       prevTs   = ts;
@@ -574,9 +572,8 @@ async function main() {
           `[SPACE] para iniciar novamente`;
       }
     } else {
-      // Câmera parada no ponto inicial enquanto aguarda [SPACE]
       eye    = catmullRomPoint(waypointsAtivos, 0);
-      target = catmullRomPoint(waypointsAtivos, 0.05);
+      target = MODO_INSTANCING ? [0, 0, 0] : catmullRomPoint(waypointsAtivos, 0.05);
 
       if (!metricsLog.length) {
         overlay.textContent =

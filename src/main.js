@@ -270,9 +270,10 @@ function exportarMetricasCSV(data) {
 function animate() {
   stats.begin();
   const delta = clock.getDelta();
+  let elapsed, t;
   if (isAutomated) {
-    const elapsed = clock.getElapsedTime() * 1000;
-    const t = Math.min(elapsed / duration, 1);
+    elapsed = clock.getElapsedTime() * 1000;
+    t = Math.min(elapsed / duration, 1);
     const pos = curveAtiva.getPointAt(t);
     camera.position.copy(pos);
     if (modoInstancing) {
@@ -281,16 +282,26 @@ function animate() {
       const lookAtPos = curveAtiva.getPointAt(Math.min(t + 0.05, 1));
       camera.lookAt(lookAtPos);
     }
-
-    // Coleta de métricas (ignora o primeiro frame onde delta ≈ 0)
-    if (delta > 0.001) {
-      metricsLog.push({ time: elapsed, fps: 1/delta, frameTime: delta*1000, drawCalls: renderer.info.render.calls, geometrias: renderer.info.memory.geometries, texturas: renderer.info.memory.textures });
-    }
-
-    if (t >= 1) { isAutomated = false; exportarMetricasCSV(metricsLog); }
   } else { controls.update(); }
 
   renderer.render(scene, camera);
+
+  if (isAutomated) {
+    // Leitura de drawCalls tem que vir DEPOIS de renderer.render(): o WebGPURenderer
+    // roda um laço de animação interno próprio (Animation.start(), disparado em
+    // renderer.init()) que reseta info.render.drawCalls a cada frame, independente
+    // do nosso requestAnimationFrame — ler antes do render() sempre pegava o valor
+    // recém-zerado (bug achado em 2026-08-22, ensaio3 saiu com Draw Calls 0.0
+    // cravado no WebGPU via Three.js).
+    // Coleta de métricas (ignora o primeiro frame onde delta ≈ 0)
+    if (delta > 0.001) {
+      const drawCalls = usarWebGPU ? renderer.info.render.drawCalls : renderer.info.render.calls;
+      metricsLog.push({ time: elapsed, fps: 1/delta, frameTime: delta*1000, drawCalls, geometrias: renderer.info.memory.geometries, texturas: renderer.info.memory.textures });
+    }
+
+    if (t >= 1) { isAutomated = false; exportarMetricasCSV(metricsLog); }
+  }
+
   stats.end();
   requestAnimationFrame(animate);
 }

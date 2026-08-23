@@ -8,7 +8,7 @@ const params = new URLSearchParams(window.location.search);
 const CONFIG_API     = "webgl-raw";
 const CONFIG_CENARIO = params.get("cenario")?.toLowerCase() || "a";
 const DURATION_MS    = 60000;
-// Instancing de estresse: ?densidade=500|2000|5000 — ver main.js para a justificativa completa.
+// estresse: ?densidade=500|2000|5000 — ver main.js para a justificativa completa.
 const CONFIG_DENSIDADE_INSTANCING = parseInt(params.get("densidade") || "0", 10);
 if (![0, 500, 2000, 5000].includes(CONFIG_DENSIDADE_INSTANCING)) {
   throw new Error(`Parâmetro "densidade" inválido: "${params.get("densidade")}". Use 500, 2000 ou 5000.`);
@@ -23,7 +23,6 @@ const caminhosCenarios = {
   a: "/CenarioBistroA.glb",
   b: "/CenarioBistroB.glb",
   c: "/CenarioBistroC.glb",
-  // Cenário D: Bistro Exterior, texturas 2048px + Draco — extra ao escopo original.
   d: "/CenarioBistroD.glb",
 };
 const ASSET_PATH = MODO_INSTANCING ? "/objetos/vespa.glb" : caminhosCenarios[CONFIG_CENARIO];
@@ -32,7 +31,7 @@ document.title = MODO_INSTANCING
   ? `Benchmark | WEBGL-RAW | Instancing N=${CONFIG_DENSIDADE_INSTANCING}`
   : `Benchmark | WEBGL-RAW | Cenário ${CONFIG_CENARIO.toUpperCase()}`;
 
-// Grid e trilho: mesma calibração do main.js; array [x,y,z] reaproveita catmullRomPoint().
+// mesma calibração do main.js; array [x,y,z] reaproveita catmullRomPoint().
 const ESPACAMENTO_GRID_INSTANCING = 4;
 const ladoGridInstancing = MODO_INSTANCING ? Math.ceil(Math.cbrt(CONFIG_DENSIDADE_INSTANCING)) : 0;
 
@@ -110,7 +109,7 @@ function mat4Mul(a, b) {
   return o;
 }
 
-// Reproduz THREE.CatmullRomCurve3 (closed=false).
+// Reproduz THREE.CatmullRomCurve3
 function catmullRomPoint(waypoints, t) {
   const n  = waypoints.length;
   const sc = Math.max(0, Math.min(t, 0.9999)) * (n - 1);
@@ -131,7 +130,7 @@ function catmullRomPoint(waypoints, t) {
   );
 }
 
-// Cenário A sem textura usa placeholder cinza 1x1 — um único pipeline para todos.
+// cenario A usa placeholder cinza 1x1 — um único pipeline para todos.
 const VERT_SRC = `#version 300 es
 precision highp float;
 
@@ -285,8 +284,6 @@ function loadAssets(path) {
           if (!texImages.has(texKey)) texImages.set(texKey, map.image);
         }
 
-        // B/C respeitam "side" do GLTF — evita z-fighting em geometria fina (folhagem, toldos).
-        // !MODO_INSTANCING evita forçar DoubleSide na vespa (CONFIG_CENARIO fica "a" por padrão).
         const doubleSided = (!MODO_INSTANCING && CONFIG_CENARIO === "a") || node.material?.side === THREE.DoubleSide;
 
         meshes.push({ pos, nor, uv, indices, fmt, texKey, doubleSided });
@@ -302,7 +299,7 @@ function loadAssets(path) {
 
 // Vértice intercalado [pos,normal,uv]=32 bytes; sem UV usa (0,0) com textura placeholder.
 function uploadMeshes(gl, meshes) {
-  // Agrupa por modo de culling para minimizar trocas de estado no loop de render.
+  // pra minimizar trocas de estado no loop de render.
   const ordered = [...meshes].sort((a, b) => Number(a.doubleSided) - Number(b.doubleSided));
   return ordered.map(({ pos, nor, uv, indices, fmt, texKey, doubleSided }) => {
     const vCount      = pos.length / 3;
@@ -370,7 +367,6 @@ function createTextureCache(gl, texImages) {
   return cache;
 }
 
-// Mesmo formato de relatório do main.js e main-raw-webgpu.js.
 function exportReport(data, loadTime, autoStartEpochMs) {
   if (!data.length) return;
 
@@ -477,7 +473,7 @@ async function main() {
     }
   });
 
-  // Sinaliza para scripts/automatizar_coleta.mjs que os assets estão prontos.
+  // sinaliza scripts/automatizar_coleta.mjs que os assets estão prontos.
   window.__assetsReady = true;
 
   const fovY = 75 * Math.PI / 180; // mesmo campo de visão do main.js
@@ -497,7 +493,7 @@ async function main() {
       const elapsed = ts - t0;
       const t       = Math.min(elapsed / DURATION_MS, 1.0);
       eye    = catmullRomPoint(waypointsAtivos, t);
-      target = catmullRomPoint(waypointsAtivos, Math.min(t + 0.05, 1.0));
+      target = MODO_INSTANCING ? [0, 0, 0] : catmullRomPoint(waypointsAtivos, Math.min(t + 0.05, 1.0));
 
       const dt = ts - prevTs;
       prevTs   = ts;
@@ -520,9 +516,8 @@ async function main() {
           `[SPACE] para iniciar novamente`;
       }
     } else {
-      // Câmera parada no ponto inicial enquanto aguarda [SPACE]
       eye    = catmullRomPoint(waypointsAtivos, 0);
-      target = catmullRomPoint(waypointsAtivos, 0.05);
+      target = MODO_INSTANCING ? [0, 0, 0] : catmullRomPoint(waypointsAtivos, 0.05);
 
       if (!metricsLog.length) {
         overlay.textContent =
