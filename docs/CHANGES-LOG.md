@@ -769,3 +769,25 @@ adiava a recoleta oficial mais uma vez. **Ressalva registrada em
 monitor (~144Hz), o "*Overhead* de CPU" calculado fica contaminado por
 tempo de espera de *vsync*, não custo real de submissão — mais confiável
 no Cenário D e no eixo de *instancing*.
+
+---
+
+## 2026-08-26 — Remoção da sentinela de deriva térmica (`--sentinela-termica`)
+
+- **Arquivo:** `scripts/automatizar_coleta.mjs`, `scripts/comparar_deriva_termica.mjs`
+(removido), `README.md`.
+- **O que:** Removi a *flag* `--sentinela-termica` de `automatizar_coleta.mjs`
+(repetia a combinação sorteada em 1º lugar como último ensaio do lote para
+comparar diretamente início vs. fim da mesma condição) e todo o código que
+dependia dela: o parâmetro `sentinela` em `rodarEnsaio`, o *push* extra na
+lista de combinações, e a chamada final que gerava a comparação. Apaguei
+`scripts/comparar_deriva_termica.mjs` por inteiro, já que sua única função
+era consumir o par gerado por essa *flag*. Tirei as duas menções em
+`README.md` (tabela de *flags* e tabela de *scripts*).
+- **Porque:** Era um experimento pontual para decidir se a deriva térmica
+ao longo de um lote longo (~100min) exigia alguma mitigação além da
+randomização em blocos já usada por padrão (`embaralhar()`). O teste já foi
+rodado e a conclusão foi usar intervalos de resfriamento entre rodadas em
+vez de uma sentinela pareada — mecanismo que já existe como
+`--intervalo-blocos <min>` (mantido). Sem uso oficial planejado, o código
+da sentinela virou só superfície de manutenção extra.

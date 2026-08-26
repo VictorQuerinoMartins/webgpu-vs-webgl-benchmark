@@ -104,7 +104,6 @@ Mede **todas** as métricas das duas tabelas acima automaticamente, sem interven
 | Flag | Efeito |
 |---|---|
 | `--modos` / `--cenarios` / `--repeticoes` | Quais combinações rodar e quantas vezes |
-| `--sentinela-termica` | Repete a combinação sorteada em 1º lugar como o último ensaio do lote, e gera automaticamente uma comparação de deriva térmica entre os dois |
 | `--intervalo-blocos <min>` | Pausa de N minutos entre rodadas, para dar tempo de recuperação térmica em lotes longos |
 | `--sem-randomizar` | Desativa a randomização em blocos (ordem sequencial) |
 | `--sem-metricas-gpu` | Desativa a captura de potência/VRAM/clock (para máquinas sem GPU NVIDIA) |
@@ -118,7 +117,6 @@ Mede **todas** as métricas das duas tabelas acima automaticamente, sem interven
 |---|---|
 | `scripts/automatizar_coleta.mjs` (`npm run coletar`) | Orquestra a coleta oficial completa via Playwright |
 | `scripts/analisar_energia.mjs` (`npm run analisar-energia`) | Correlaciona um relatório de ensaio com o log de potência, calculando Green IT, VRAM, temperatura e clock/*throttling* |
-| `scripts/comparar_deriva_termica.mjs` | Compara dois ensaios (tipicamente 1º vs. último de um lote com `--sentinela-termica`) e gera uma tabela de delta |
 | `scripts/consolidar_medias.mjs` | Agrega todas as repetições de `resultados/` numa única planilha CSV por combinação modo×cenário |
 | `scripts/gerar_tabela_txt.mjs` | Gera tabelas de texto prontas para colar na monografia a partir do CSV consolidado |
 | `scripts/gerar_graficos.py` | Gera as figuras (Frame Time, VRAM, Frames/Watt etc.) em estilo de artigo científico |
@@ -143,8 +141,8 @@ resultados/
 
 ## 📚 Documentação Adicional
 
+- [`RULES.md`](RULES.md) — requisitos pra rodar (navegador, GPU) e o que não alterar sem cuidado se for clonar/contribuir.
 - [`docs/COMO-TESTAR-CENARIOS.md`](docs/COMO-TESTAR-CENARIOS.md) — guia operacional completo de cada cenário e modo.
-- [`CLAUDE.md`](CLAUDE.md) — contexto metodológico completo do projeto (hardware, métricas, regras de reprodutibilidade).
 - [`docs/CHANGES-LOG.md`](docs/CHANGES-LOG.md) — histórico cronológico de toda modificação feita no projeto, com o quê e o porquê.
 
 ---

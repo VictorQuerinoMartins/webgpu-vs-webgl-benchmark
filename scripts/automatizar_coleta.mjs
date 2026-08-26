@@ -59,7 +59,6 @@ function parseArgs(argv) {
     metricasGpu: true,
     randomizar: true,
     aquecimento: true,
-    sentinelaTermica: false,
     intervaloBlocosMin: 0,
   };
 
@@ -99,9 +98,6 @@ function parseArgs(argv) {
         break;
       case "--sem-aquecimento":
         opts.aquecimento = false;
-        break;
-      case "--sentinela-termica":
-        opts.sentinelaTermica = true;
         break;
       case "--intervalo-blocos":
         opts.intervaloBlocosMin = Number(next());
@@ -325,13 +321,13 @@ async function correlacionarMetricasGpu(caminhoRelatorio, caminhoPowerLog) {
   }
 }
 
-async function rodarEnsaio(browser, { modo, cenario, run, opts, caminhoPowerLog, aquecimento = false, sentinela = false }) {
+async function rodarEnsaio(browser, { modo, cenario, run, opts, caminhoPowerLog, aquecimento = false }) {
   const url = URL_BUILDER[modo](opts.baseUrl, cenario);
   const destDir = DEST_DIR[modo];
 
-  // Sufixo "aquecimento"/"sentinela_fim" (nao "_run<N>") marca claramente que
-  // nao e uma repeticao oficial, evitando colidir com o arquivo run<N> real.
-  const sufixo = aquecimento ? "aquecimento" : sentinela ? "sentinela_fim" : `run${run}`;
+  // Sufixo "aquecimento" (nao "_run<N>") marca claramente que nao e uma
+  // repeticao oficial, evitando colidir com o arquivo run<N> real.
+  const sufixo = aquecimento ? "aquecimento" : `run${run}`;
   const rotuloCenario = RE_CENARIO_INSTANCING.test(cenario) ? `instancing_${cenario}` : `cenario_${cenario}`;
   const destPath = join(destDir, `relatorio_benchmark_${modo}_${rotuloCenario}_${sufixo}.txt`);
 
@@ -448,19 +444,6 @@ async function main() {
     }
   }
 
-  // Sentinela de deriva termica: repete a combinacao que caiu em 1o lugar
-  // (seja qual for, depende do sorteio de embaralhar()) como ultimo ensaio
-  // do lote, pra comparar diretamente inicio vs. fim da mesma condicao —
-  // ver scripts/comparar_deriva_termica.mjs.
-  if (opts.sentinelaTermica && combinacoes.length > 0) {
-    const primeira = combinacoes[0];
-    combinacoes.push({ modo: primeira.modo, cenario: primeira.cenario, run: primeira.run, sentinela: true });
-    console.log(
-      `  Sentinela de deriva termica: ATIVADA — modo=${primeira.modo} cenario=${primeira.cenario} ` +
-      `(1o ensaio sorteado) sera repetido como o ultimo ensaio do lote.`
-    );
-  }
-
   if (opts.randomizar) {
     const caminhoOrdem = join("resultados", "power_logs", `ordem_execucao_${Date.now()}.json`);
     mkdirSync(dirname(caminhoOrdem), { recursive: true });
@@ -511,20 +494,16 @@ async function main() {
         console.log(`[automatizar_coleta] Intervalo concluido, retomando o lote.`);
       }
 
-      const { modo, cenario, run, sentinela } = combinacoes[i];
-      console.log(
-        `\n[${i + 1}/${combinacoes.length}] modo=${modo} cenario=${cenario} run=${run}/${opts.repeticoes}` +
-        (sentinela ? " (SENTINELA — repete o 1o ensaio do lote p/ deriva termica)" : "")
-      );
+      const { modo, cenario, run } = combinacoes[i];
+      console.log(`\n[${i + 1}/${combinacoes.length}] modo=${modo} cenario=${cenario} run=${run}/${opts.repeticoes}`);
       const resultado = await rodarEnsaio(browser, {
         modo,
         cenario,
         run,
         opts,
         caminhoPowerLog: amostrador?.caminhoCsv,
-        sentinela: sentinela === true,
       });
-      resultados.push({ modo, cenario, run, sentinela: sentinela === true, ...resultado });
+      resultados.push({ modo, cenario, run, ...resultado });
 
       if (i < combinacoes.length - 1) {
         console.log(`  Pausa de ${opts.pausaMs}ms antes do proximo ensaio...`);
@@ -549,30 +528,6 @@ async function main() {
     console.log(`  Falhas:`);
     falha.forEach((r) => console.log(`    - modo=${r.modo} cenario=${r.cenario} run=${r.run}: ${r.error}`));
     process.exitCode = 1;
-  }
-
-  if (opts.sentinelaTermica) {
-    const primeiroResultado = resultados[0];
-    const sentinelaResultado = resultados[resultados.length - 1];
-    if (primeiroResultado?.ok && sentinelaResultado?.ok && sentinelaResultado.sentinela) {
-      console.log(`\n[automatizar_coleta] Gerando comparacao de deriva termica (1o vs. ultimo ensaio)...`);
-      try {
-        const { stdout } = await execFileAsync(process.execPath, [
-          "scripts/comparar_deriva_termica.mjs",
-          primeiroResultado.destPath,
-          sentinelaResultado.destPath,
-        ]);
-        console.log(stdout.trim());
-      } catch (err) {
-        console.error(`[automatizar_coleta] Falha ao gerar comparacao de deriva termica: ${err.stderr || err.message}`);
-      }
-    } else {
-      console.warn(
-        "[automatizar_coleta] Sentinela de deriva termica ativada, mas o 1o ou o ultimo " +
-        "ensaio falhou — comparacao nao gerada. Rode manualmente com " +
-        "scripts/comparar_deriva_termica.mjs apontando pros relatorios corretos, se algum teve sucesso."
-      );
-    }
   }
 }
 
