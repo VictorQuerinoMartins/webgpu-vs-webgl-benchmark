@@ -1,7 +1,7 @@
 # Changes Log
 
-Este arquivo registra, em ordem cronológica e em primeira pessoa, toda
-modificação que fiz neste repositório: **o que fiz** e **por quê**, de
+Este arquivo registra, em ordem cronológica, toda
+modificação neste repositório: **o que** e **por quê**, de
 forma resumida. Cada nova alteração é adicionada como uma entrada no final
 deste arquivo, nunca reescrevendo o histórico anterior.
 
