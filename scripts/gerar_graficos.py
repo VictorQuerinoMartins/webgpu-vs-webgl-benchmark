@@ -19,10 +19,10 @@ REPO = Path(__file__).resolve().parents[1]
 OUT_DIR = REPO.parent / "TCC_CComp_2026 (1)" / "imagens"
 
 DIRS = {
-    "webgl": "resultados/webgl",
-    "webgpu": "resultados/webgpu",
-    "webgl-raw": "resultados/web-gl_puro",
-    "webgpu-raw": "resultados/web-gpu_puro",
+    "webgl": "resultados/threejs-webgl",
+    "webgpu": "resultados/threejs-webgpu",
+    "webgl-raw": "resultados/raw-webgl",
+    "webgpu-raw": "resultados/raw-webgpu",
 }
 
 RE_ARQUIVO = re.compile(

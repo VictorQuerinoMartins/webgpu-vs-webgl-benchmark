@@ -69,6 +69,57 @@ function gerarCurvaOrbitalInstancing(lado, espacamento) {
   return new THREE.CatmullRomCurve3(pontos); // aberta — mesmo comportamento (sem wrap) do trilho do Bistro
 }
 
+// Decomposição CPU/GPU pro caminho WebGL clássico (Green IT §3.A do
+// CLAUDE.md, 2026-08-24 — ver CHANGES-LOG.md). O WebGLRenderer classico do
+// Three.js nao tem suporte nativo a timestamp queries (so o WebGPURenderer
+// novo tem, via trackTimestamp); reaproveita o mesmo medidor manual de
+// src/main-raw-webgl.js (EXT_disjoint_timer_query_webgl2, pool de N slots
+// em rotacao). O begin/end aqui envolve a chamada inteira de
+// renderer.render(), que emite todos os draw calls do frame de forma
+// sincrona — equivalente ao que os draw calls do RAW cobrem.
+function criarMedidorGpuWebGL(gl) {
+  const ext = gl.getExtension("EXT_disjoint_timer_query_webgl2");
+  if (!ext) return null;
+
+  const POOL = 4;
+  const slots = Array.from({ length: POOL }, () => ({ query: gl.createQuery(), livre: true }));
+  let proximoSlot = 0;
+  let ultimoMs = null;
+
+  function reservarSlot() {
+    for (let tentativas = 0; tentativas < POOL; tentativas++) {
+      const idx = (proximoSlot + tentativas) % POOL;
+      if (slots[idx].livre) {
+        proximoSlot = (idx + 1) % POOL;
+        slots[idx].livre = false;
+        return idx;
+      }
+    }
+    return -1;
+  }
+
+  function pollPendentes() {
+    const disjoint = gl.getParameter(ext.GPU_DISJOINT_EXT);
+    for (const s of slots) {
+      if (s.livre) continue;
+      if (!gl.getQueryParameter(s.query, gl.QUERY_RESULT_AVAILABLE)) continue;
+      if (!disjoint) {
+        const ns = gl.getQueryParameter(s.query, gl.QUERY_RESULT);
+        if (ns > 0 && ns < 1e9) ultimoMs = ns / 1e6;
+      }
+      s.livre = true;
+    }
+  }
+
+  return {
+    reservarSlot,
+    iniciar: (idx) => gl.beginQuery(ext.TIME_ELAPSED_EXT, slots[idx].query),
+    encerrar: () => gl.endQuery(ext.TIME_ELAPSED_EXT),
+    pollPendentes,
+    tempoMsAtual: () => ultimoMs,
+  };
+}
+
 const stats = new Stats();
 stats.showPanel(0); 
 document.body.appendChild(stats.dom);
@@ -86,7 +137,10 @@ const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerH
 
 let renderer;
 if (usarWebGPU) {
-  renderer = new WebGPURenderer({ antialias: true, powerPreference: "high-performance" });
+  // trackTimestamp habilita GPU timestamp queries nativas do WebGPURenderer
+  // (renderer.resolveTimestampsAsync/renderer.info.render.timestamp) — decomposicao
+  // CPU/GPU do Green IT §3.A, ver CHANGES-LOG.md 2026-08-24.
+  renderer = new WebGPURenderer({ antialias: true, powerPreference: "high-performance", trackTimestamp: true });
 } else {
   renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
 }
@@ -99,6 +153,11 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
 
 if (usarWebGPU) await renderer.init();
+
+const medidorGpuWebGL = usarWebGPU ? null : criarMedidorGpuWebGL(renderer.getContext());
+if (!usarWebGPU && !medidorGpuWebGL) {
+  console.warn("[main.js] Extensao 'EXT_disjoint_timer_query_webgl2' indisponivel — Tempo de GPU sera N/A.");
+}
 
 const rgbeLoader = new RGBELoader();
 rgbeLoader.load("https://threejs.org/examples/textures/equirectangular/venice_sunset_1k.hdr", (texture) => {
@@ -185,6 +244,10 @@ const curve = new THREE.CatmullRomCurve3([
 const curveAtiva = modoInstancing
   ? gerarCurvaOrbitalInstancing(ladoGridInstancing, ESPACAMENTO_GRID_INSTANCING)
   : curve;
+// Aquece o cache de comprimento de arco (getLengths, 200 subdivisões) fora da
+// janela cronometrada — a primeira chamada de getPointAt() é cara e senão
+// contaminaria o Frame Time Máximo do primeiro quadro pós-[SPACE].
+curveAtiva.getPointAt(0);
 
 const duration = 60000;
 const clock = new THREE.Clock();
@@ -224,6 +287,10 @@ function exportarMetricasCSV(data) {
   const geometriasFinal = data[data.length - 1].geometrias;
   const texturasFinal = data[data.length - 1].texturas;
 
+  const comGpu = data.filter((row) => typeof row.gpuMs === "number");
+  const gpuMedio = comGpu.length ? comGpu.reduce((sum, row) => sum + row.gpuMs, 0) / comGpu.length : null;
+  const cpuOverheadMedio = gpuMedio !== null ? frameTimeMedio - gpuMedio : null;
+
   let conteudoTexto = "";
   conteudoTexto += `API de Renderizacao: ${CONFIG_API.toUpperCase()}\n`;
   conteudoTexto += modoInstancing
@@ -240,13 +307,15 @@ function exportarMetricasCSV(data) {
   conteudoTexto += `Draw Calls Maximo: ${drawCallsMaximo}\n`;
   conteudoTexto += `Geometrias na VRAM (final): ${geometriasFinal}\n`;
   conteudoTexto += `Texturas na VRAM (final): ${texturasFinal}\n`;
+  conteudoTexto += `Tempo de GPU Medio (ms): ${gpuMedio !== null ? gpuMedio.toFixed(3) : "N/A"}\n`;
+  conteudoTexto += `Overhead de CPU Medio (ms): ${cpuOverheadMedio !== null ? cpuOverheadMedio.toFixed(3) : "N/A"}\n`;
   conteudoTexto += `Total de Quadros Amostrados: ${totalQuadros} frames\n`;
 
   conteudoTexto += "\n--- DADOS BRUTOS QUADRO A QUADRO ---\n";
-  conteudoTexto += "Tempo Decorrido (ms),FPS Instantaneo,Tempo de Frame (ms),Draw Calls,Geometrias,Texturas\n";
+  conteudoTexto += "Tempo Decorrido (ms),FPS Instantaneo,Tempo de Frame (ms),Draw Calls,Geometrias,Texturas,Tempo de GPU (ms)\n";
 
   data.forEach((row) => {
-    conteudoTexto += `${row.time.toFixed(0)},${row.fps.toFixed(1)},${row.frameTime.toFixed(2)},${row.drawCalls},${row.geometrias},${row.texturas}\n`;
+    conteudoTexto += `${row.time.toFixed(0)},${row.fps.toFixed(1)},${row.frameTime.toFixed(2)},${row.drawCalls},${row.geometrias},${row.texturas},${typeof row.gpuMs === "number" ? row.gpuMs.toFixed(3) : ""}\n`;
   });
 
   const blob = new Blob([conteudoTexto], { type: "text/plain;charset=utf-8;" });
@@ -284,7 +353,22 @@ function animate() {
     }
   } else { controls.update(); }
 
+  const querySlotWebGL = medidorGpuWebGL ? medidorGpuWebGL.reservarSlot() : -1;
+  if (querySlotWebGL >= 0) medidorGpuWebGL.iniciar(querySlotWebGL);
+
   renderer.render(scene, camera);
+
+  if (querySlotWebGL >= 0) medidorGpuWebGL.encerrar();
+  medidorGpuWebGL?.pollPendentes();
+  if (usarWebGPU) {
+    // Fire-and-forget: resolveTimestampsAsync() e seguro de chamar todo
+    // quadro sem aguardar — o proprio pool interno do three.js reusa a
+    // mesma Promise se uma resolucao ja estiver em andamento (ver
+    // WebGPUTimestampQueryPool.resolveQueriesAsync). O valor lido em
+    // renderer.info.render.timestamp fica alguns quadros atrasado, igual
+    // ao ring buffer manual usado nos arquivos RAW.
+    renderer.resolveTimestampsAsync(THREE.TimestampQuery.RENDER).catch(() => {});
+  }
 
   if (isAutomated) {
     // Leitura de drawCalls tem que vir DEPOIS de renderer.render(): o WebGPURenderer
@@ -296,7 +380,8 @@ function animate() {
     // Coleta de métricas (ignora o primeiro frame onde delta ≈ 0)
     if (delta > 0.001) {
       const drawCalls = usarWebGPU ? renderer.info.render.drawCalls : renderer.info.render.calls;
-      metricsLog.push({ time: elapsed, fps: 1/delta, frameTime: delta*1000, drawCalls, geometrias: renderer.info.memory.geometries, texturas: renderer.info.memory.textures });
+      const gpuMs = usarWebGPU ? (renderer.info.render.timestamp || null) : medidorGpuWebGL?.tempoMsAtual() ?? null;
+      metricsLog.push({ time: elapsed, fps: 1/delta, frameTime: delta*1000, drawCalls, geometrias: renderer.info.memory.geometries, texturas: renderer.info.memory.textures, gpuMs });
     }
 
     if (t >= 1) { isAutomated = false; exportarMetricasCSV(metricsLog); }

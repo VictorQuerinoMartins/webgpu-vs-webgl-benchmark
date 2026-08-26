@@ -3,7 +3,7 @@
 import { chromium } from "playwright-core";
 import { mkdirSync, createWriteStream, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -11,13 +11,13 @@ const execFileAsync = promisify(execFile);
 const DURACAO_ENSAIO_MS = 60_000; // Regra 4 do CLAUDE.md — nao mude sem mudar main.js
 
 const DEST_DIR = {
-  webgl: "resultados/webgl",
-  webgpu: "resultados/webgpu",
-  "webgl-raw": "resultados/web-gl_puro",
-  "webgpu-raw": "resultados/web-gpu_puro",
+  webgl: "resultados/threejs-webgl",
+  webgpu: "resultados/threejs-webgpu",
+  "webgl-raw": "resultados/raw-webgl",
+  "webgpu-raw": "resultados/raw-webgpu",
 };
 
-// nNNN = instancing (ver CHANGELOG-IA.md); reaproveita toda a maquinaria de cenario trocando so a URL.
+// nNNN = instancing (ver CHANGES-LOG.md); reaproveita toda a maquinaria de cenario trocando so a URL.
 const RE_CENARIO_INSTANCING = /^n(\d+)$/;
 
 function urlBenchmark(base, apiParam, cenario) {
@@ -59,6 +59,8 @@ function parseArgs(argv) {
     metricasGpu: true,
     randomizar: true,
     aquecimento: true,
+    sentinelaTermica: false,
+    intervaloBlocosMin: 0,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -98,6 +100,12 @@ function parseArgs(argv) {
       case "--sem-aquecimento":
         opts.aquecimento = false;
         break;
+      case "--sentinela-termica":
+        opts.sentinelaTermica = true;
+        break;
+      case "--intervalo-blocos":
+        opts.intervaloBlocosMin = Number(next());
+        break;
       default:
         console.error(`[automatizar_coleta] Opcao desconhecida: ${arg}`);
         process.exit(1);
@@ -118,6 +126,10 @@ function parseArgs(argv) {
   }
   if (!Number.isInteger(opts.repeticoes) || opts.repeticoes < 1) {
     console.error(`[automatizar_coleta] --repeticoes precisa ser um inteiro >= 1.`);
+    process.exit(1);
+  }
+  if (!Number.isFinite(opts.intervaloBlocosMin) || opts.intervaloBlocosMin < 0) {
+    console.error(`[automatizar_coleta] --intervalo-blocos precisa ser um numero >= 0 (minutos).`);
     process.exit(1);
   }
 
@@ -142,8 +154,31 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// nvidia-smi a 1Hz: potencia, VRAM e temperatura numa unica chamada (Green IT).
+// nvidia-smi: potencia, VRAM e temperatura numa unica chamada (Green IT).
 const NVIDIA_SMI_QUERY = "power.draw,memory.used,temperature.gpu";
+// Amostrador oficial usa --loop-ms=100 (10 Hz) com o timestamp do proprio
+// nvidia-smi (precisao de ms) em vez de Date.now() apos cada chamada — evita
+// tanto o overhead de spawnar um processo novo a cada 100ms quanto o jitter
+// de agendamento do setInterval do Node. 10 Hz em vez de 1 Hz porque o
+// sensor de potencia da NVIDIA so fica "ativo" por uma fracao do intervalo
+// entre leituras (Yang, Adamek e Armour, "Accurate and Convenient Energy
+// Measurements for GPUs", SC24, DOI 10.1109/SC41406.2024.00028) — amostrar
+// mais rapido reduz a chance de perder transientes de potencia entre
+// leituras, especialmente relevante no Cenario D (picos de Frame Time de
+// ate 2,9s dentro do mesmo ensaio).
+//
+// clocks.current.graphics + clocks_throttle_reasons.*_thermal_slowdown
+// (adicionado 2026-08-26): a temperatura de nucleo satura num teto de
+// fabrica (~87C, "GPU Target Temperature Specification") e por isso NAO
+// revela throttling sustentado -- dois ensaios podem reportar a mesma
+// temperatura media com clocks bem diferentes, porque o sensor de nucleo e
+// controlado ativamente pra ficar estavel, nao e uma leitura livre. O clock
+// real e o flag booleano de throttling termico do proprio driver mostram o
+// efeito direto, sem precisar inferir a partir de temperatura+potencia+FPS.
+const NVIDIA_SMI_QUERY_LOOP =
+  `timestamp,${NVIDIA_SMI_QUERY},clocks.current.graphics,` +
+  `clocks_throttle_reasons.sw_thermal_slowdown,clocks_throttle_reasons.hw_thermal_slowdown`;
+const GPU_SAMPLE_LOOP_MS = 100;
 
 async function checarNvidiaSmi() {
   try {
@@ -154,31 +189,59 @@ async function checarNvidiaSmi() {
   }
 }
 
+// "2026/08/24 13:49:31.624" (hora local, formato do nvidia-smi) -> epoch ms.
+// new Date() sem sufixo de fuso interpreta a string como hora local (mesmo
+// relogio do sistema usado por Date.now() em outros pontos da coleta), entao
+// o valor resultante e diretamente comparavel aos timestamps do relatorio.
+function parseTimestampNvidiaSmiMs(ts) {
+  const iso = ts.trim().replace(/^(\d{4})\/(\d{2})\/(\d{2})/, "$1-$2-$3").replace(" ", "T");
+  return new Date(iso).getTime();
+}
+
 function iniciarAmostradorDeGpu(caminhoCsv) {
   mkdirSync(dirname(caminhoCsv), { recursive: true });
   const stream = createWriteStream(caminhoCsv, { flags: "a" });
-  stream.write("timestamp,watts,vram_mb,temp_c\n");
+  stream.write("timestamp,watts,vram_mb,temp_c,clock_mhz,throttle_sw,throttle_hw\n");
 
-  const intervalId = setInterval(async () => {
-    try {
-      const { stdout } = await execFileAsync("nvidia-smi", [
-        `--query-gpu=${NVIDIA_SMI_QUERY}`,
-        "--format=csv,noheader,nounits",
-      ]);
-      const [watts, vramMb, tempC] = stdout.trim().split(",").map((s) => s.trim());
-      const timestamp = Math.floor(Date.now() / 1000);
-      stream.write(`${timestamp},${watts},${vramMb},${tempC}\n`);
-    } catch (err) {
-      console.error(`  [gpu-sampler] falha ao ler nvidia-smi: ${err.message}`);
+  const proc = spawn("nvidia-smi", [
+    `--query-gpu=${NVIDIA_SMI_QUERY_LOOP}`,
+    "--format=csv,noheader,nounits",
+    `--loop-ms=${GPU_SAMPLE_LOOP_MS}`,
+  ]);
+
+  let bufferParcial = "";
+  proc.stdout.on("data", (chunk) => {
+    bufferParcial += chunk.toString();
+    const linhas = bufferParcial.split(/\r?\n/);
+    bufferParcial = linhas.pop(); // ultima linha pode estar incompleta
+
+    for (const linha of linhas) {
+      if (!linha.trim()) continue;
+      const [tsStr, watts, vramMb, tempC, clockMhz, throttleSw, throttleHw] = linha.split(",").map((s) => s.trim());
+      const timestampMs = parseTimestampNvidiaSmiMs(tsStr);
+      if (!Number.isFinite(timestampMs)) {
+        console.error(`  [gpu-sampler] timestamp invalido, linha ignorada: "${linha}"`);
+        continue;
+      }
+      stream.write(`${timestampMs},${watts},${vramMb},${tempC},${clockMhz},${throttleSw},${throttleHw}\n`);
     }
-  }, 1000);
+  });
+
+  let erroProcesso = null;
+  proc.stderr.on("data", (chunk) => { erroProcesso = chunk.toString().trim(); });
+  proc.on("error", (err) => console.error(`  [gpu-sampler] falha ao iniciar nvidia-smi: ${err.message}`));
+  proc.on("exit", (code) => {
+    if (code !== null && code !== 0) {
+      console.error(`  [gpu-sampler] nvidia-smi encerrou com codigo ${code}${erroProcesso ? `: ${erroProcesso}` : ""}`);
+    }
+  });
 
   return {
     caminhoCsv,
     parar: () =>
       new Promise((resolve) => {
-        clearInterval(intervalId);
-        stream.end(resolve);
+        proc.once("exit", () => stream.end(resolve));
+        proc.kill();
       }),
   };
 }
@@ -262,12 +325,13 @@ async function correlacionarMetricasGpu(caminhoRelatorio, caminhoPowerLog) {
   }
 }
 
-async function rodarEnsaio(browser, { modo, cenario, run, opts, caminhoPowerLog, aquecimento = false }) {
+async function rodarEnsaio(browser, { modo, cenario, run, opts, caminhoPowerLog, aquecimento = false, sentinela = false }) {
   const url = URL_BUILDER[modo](opts.baseUrl, cenario);
   const destDir = DEST_DIR[modo];
 
-  // Sufixo "aquecimento" (nao "_run<N>") marca claramente que nao e dado oficial.
-  const sufixo = aquecimento ? "aquecimento" : `run${run}`;
+  // Sufixo "aquecimento"/"sentinela_fim" (nao "_run<N>") marca claramente que
+  // nao e uma repeticao oficial, evitando colidir com o arquivo run<N> real.
+  const sufixo = aquecimento ? "aquecimento" : sentinela ? "sentinela_fim" : `run${run}`;
   const rotuloCenario = RE_CENARIO_INSTANCING.test(cenario) ? `instancing_${cenario}` : `cenario_${cenario}`;
   const destPath = join(destDir, `relatorio_benchmark_${modo}_${rotuloCenario}_${sufixo}.txt`);
 
@@ -330,6 +394,9 @@ async function main() {
   console.log(`  Base URL: ${opts.baseUrl}`);
   console.log(`  Navegador: ${opts.canal} (headless: ${opts.headless})`);
   console.log(`  Aquecimento: ${opts.aquecimento ? "1 ensaio descartado antes do lote" : "desativado"}`);
+  console.log(
+    `  Intervalo de resfriamento entre rodadas: ${opts.intervaloBlocosMin > 0 ? `${opts.intervaloBlocosMin} min` : "desativado"}`
+  );
 
   await checarServidor(opts.baseUrl);
 
@@ -358,7 +425,7 @@ async function main() {
   if (opts.metricasGpu) {
     const caminhoCsv = join("resultados", "power_logs", `power_log_${Date.now()}.csv`);
     amostrador = iniciarAmostradorDeGpu(caminhoCsv);
-    console.log(`  Metricas de GPU (Potencia + VRAM): ativadas — log em ${caminhoCsv} (nvidia-smi, 1 Hz)`);
+    console.log(`  Metricas de GPU (Potencia + VRAM): ativadas — log em ${caminhoCsv} (nvidia-smi, ${GPU_SAMPLE_LOOP_MS}ms/${(1000 / GPU_SAMPLE_LOOP_MS).toFixed(0)}Hz)`);
   }
 
   // Embaralha dentro de cada rodada — nao um shuffle global das N repeticoes.
@@ -370,11 +437,28 @@ async function main() {
   }
 
   const combinacoes = [];
+  // Indices em `combinacoes` onde uma nova rodada comeca (todas exceto a
+  // primeira) — usado pelo intervalo de resfriamento entre blocos.
+  const rodadaBoundaries = [];
   for (let run = 1; run <= opts.repeticoes; run++) {
     const rodada = opts.randomizar ? embaralhar(combosBase) : combosBase;
+    if (run > 1) rodadaBoundaries.push(combinacoes.length);
     for (const { modo, cenario } of rodada) {
       combinacoes.push({ modo, cenario, run });
     }
+  }
+
+  // Sentinela de deriva termica: repete a combinacao que caiu em 1o lugar
+  // (seja qual for, depende do sorteio de embaralhar()) como ultimo ensaio
+  // do lote, pra comparar diretamente inicio vs. fim da mesma condicao —
+  // ver scripts/comparar_deriva_termica.mjs.
+  if (opts.sentinelaTermica && combinacoes.length > 0) {
+    const primeira = combinacoes[0];
+    combinacoes.push({ modo: primeira.modo, cenario: primeira.cenario, run: primeira.run, sentinela: true });
+    console.log(
+      `  Sentinela de deriva termica: ATIVADA — modo=${primeira.modo} cenario=${primeira.cenario} ` +
+      `(1o ensaio sorteado) sera repetido como o ultimo ensaio do lote.`
+    );
   }
 
   if (opts.randomizar) {
@@ -418,9 +502,19 @@ async function main() {
     }
 
     for (let i = 0; i < combinacoes.length; i++) {
-      const { modo, cenario, run } = combinacoes[i];
+      if (opts.intervaloBlocosMin > 0 && rodadaBoundaries.includes(i)) {
+        console.log(
+          `\n[automatizar_coleta] Intervalo de resfriamento entre rodadas: aguardando ${opts.intervaloBlocosMin} min ` +
+          `(GPU ociosa) antes da proxima rodada...`
+        );
+        await sleep(opts.intervaloBlocosMin * 60_000);
+        console.log(`[automatizar_coleta] Intervalo concluido, retomando o lote.`);
+      }
+
+      const { modo, cenario, run, sentinela } = combinacoes[i];
       console.log(
-        `\n[${i + 1}/${combinacoes.length}] modo=${modo} cenario=${cenario} run=${run}/${opts.repeticoes}`
+        `\n[${i + 1}/${combinacoes.length}] modo=${modo} cenario=${cenario} run=${run}/${opts.repeticoes}` +
+        (sentinela ? " (SENTINELA — repete o 1o ensaio do lote p/ deriva termica)" : "")
       );
       const resultado = await rodarEnsaio(browser, {
         modo,
@@ -428,8 +522,9 @@ async function main() {
         run,
         opts,
         caminhoPowerLog: amostrador?.caminhoCsv,
+        sentinela: sentinela === true,
       });
-      resultados.push({ modo, cenario, run, ...resultado });
+      resultados.push({ modo, cenario, run, sentinela: sentinela === true, ...resultado });
 
       if (i < combinacoes.length - 1) {
         console.log(`  Pausa de ${opts.pausaMs}ms antes do proximo ensaio...`);
@@ -454,6 +549,30 @@ async function main() {
     console.log(`  Falhas:`);
     falha.forEach((r) => console.log(`    - modo=${r.modo} cenario=${r.cenario} run=${r.run}: ${r.error}`));
     process.exitCode = 1;
+  }
+
+  if (opts.sentinelaTermica) {
+    const primeiroResultado = resultados[0];
+    const sentinelaResultado = resultados[resultados.length - 1];
+    if (primeiroResultado?.ok && sentinelaResultado?.ok && sentinelaResultado.sentinela) {
+      console.log(`\n[automatizar_coleta] Gerando comparacao de deriva termica (1o vs. ultimo ensaio)...`);
+      try {
+        const { stdout } = await execFileAsync(process.execPath, [
+          "scripts/comparar_deriva_termica.mjs",
+          primeiroResultado.destPath,
+          sentinelaResultado.destPath,
+        ]);
+        console.log(stdout.trim());
+      } catch (err) {
+        console.error(`[automatizar_coleta] Falha ao gerar comparacao de deriva termica: ${err.stderr || err.message}`);
+      }
+    } else {
+      console.warn(
+        "[automatizar_coleta] Sentinela de deriva termica ativada, mas o 1o ou o ultimo " +
+        "ensaio falhou — comparacao nao gerada. Rode manualmente com " +
+        "scripts/comparar_deriva_termica.mjs apontando pros relatorios corretos, se algum teve sucesso."
+      );
+    }
   }
 }
 

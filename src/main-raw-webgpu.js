@@ -108,24 +108,149 @@ function mat4Mul(a, b) {
   return o;
 }
 
-function catmullRomPoint(waypoints, t) {
-  const n  = waypoints.length;
-  const sc = Math.max(0, Math.min(t, 0.9999)) * (n - 1);
-  const i  = Math.floor(sc);
-  const lt = sc - i;
-  const p0 = waypoints[Math.max(0, i - 1)];
-  const p1 = waypoints[i];
-  const p2 = waypoints[Math.min(n - 1, i + 1)];
-  const p3 = waypoints[Math.min(n - 1, i + 2)];
-  const t2 = lt * lt, t3 = t2 * lt;
-  return [0, 1, 2].map(ax =>
-    0.5 * (
-      2 * p1[ax] +
-      (-p0[ax] + p2[ax]) * lt +
-      (2*p0[ax] - 5*p1[ax] + 4*p2[ax] - p3[ax]) * t2 +
-      (-p0[ax] + 3*p1[ax] - 3*p2[ax] + p3[ax]) * t3
-    )
-  );
+// Catmull-Rom centripetal + parametrização por comprimento de arco — replica
+// THREE.CatmullRomCurve3.getPoint()/getPointAt() (curveType padrão
+// 'centripetal', arcLengthDivisions=200) usada em main.js, pra que a câmera
+// passe pelo mesmo lugar no mesmo instante t nos dois modos de renderização.
+// Antes desta versão, a variante "uniforme" aqui usada acelerava/desacelerava
+// entre os waypoints (não-equidistantes) de forma diferente do main.js — ver
+// LIMITACOES-VALIDACAO-LITERATURA.md item 1.3 (achado 2026-08-24).
+function criarCurvaCentripetal(waypoints) {
+  const n = waypoints.length;
+  const dist2 = (a, b) => (a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2;
+  const extrapolar = (a, b) => [2*a[0]-b[0], 2*a[1]-b[1], 2*a[2]-b[2]]; // 2a - b
+
+  function getPoint(t) {
+    const p = (n - 1) * Math.max(0, Math.min(t, 1));
+    let intPoint = Math.floor(p);
+    let weight = p - intPoint;
+    if (weight === 0 && intPoint === n - 1) { intPoint = n - 2; weight = 1; }
+
+    const p1 = waypoints[intPoint];
+    const p2 = waypoints[Math.min(n - 1, intPoint + 1)];
+    const p0 = intPoint > 0 ? waypoints[intPoint - 1] : extrapolar(p1, p2);
+    const p3 = intPoint + 2 < n ? waypoints[intPoint + 2] : extrapolar(p2, p1);
+
+    let dt0 = Math.pow(dist2(p0, p1), 0.25);
+    let dt1 = Math.pow(dist2(p1, p2), 0.25);
+    let dt2 = Math.pow(dist2(p2, p3), 0.25);
+    if (dt1 < 1e-4) dt1 = 1.0;
+    if (dt0 < 1e-4) dt0 = dt1;
+    if (dt2 < 1e-4) dt2 = dt1;
+
+    const w2 = weight * weight, w3 = w2 * weight;
+    return [0, 1, 2].map((ax) => {
+      const x0 = p0[ax], x1 = p1[ax], x2 = p2[ax], x3 = p3[ax];
+      let tan1 = (x1 - x0) / dt0 - (x2 - x0) / (dt0 + dt1) + (x2 - x1) / dt1;
+      let tan2 = (x2 - x1) / dt1 - (x3 - x1) / (dt1 + dt2) + (x3 - x2) / dt2;
+      tan1 *= dt1; tan2 *= dt1;
+      const c0 = x1, c1 = tan1, c2 = -3*x1 + 3*x2 - 2*tan1 - tan2, c3 = 2*x1 - 2*x2 + tan1 + tan2;
+      return c0 + c1*weight + c2*w2 + c3*w3;
+    });
+  }
+
+  let arcLengths = null;
+  function getLengths(divisions = 200) {
+    if (arcLengths) return arcLengths;
+    const cache = [0];
+    let last = getPoint(0), sum = 0;
+    for (let i = 1; i <= divisions; i++) {
+      const cur = getPoint(i / divisions);
+      sum += Math.hypot(cur[0]-last[0], cur[1]-last[1], cur[2]-last[2]);
+      cache.push(sum);
+      last = cur;
+    }
+    arcLengths = cache;
+    return cache;
+  }
+
+  function getUtoTmapping(u) {
+    const arcLen = getLengths();
+    const il = arcLen.length;
+    const targetLen = u * arcLen[il - 1];
+    let low = 0, high = il - 1, i = 0;
+    while (low <= high) {
+      i = Math.floor(low + (high - low) / 2);
+      const cmp = arcLen[i] - targetLen;
+      if (cmp < 0) low = i + 1;
+      else if (cmp > 0) high = i - 1;
+      else { high = i; break; }
+    }
+    i = high;
+    if (arcLen[i] === targetLen) return i / (il - 1);
+    const segFrac = (targetLen - arcLen[i]) / (arcLen[i + 1] - arcLen[i]);
+    return (i + segFrac) / (il - 1);
+  }
+
+  // Clamp defensivo: o primeiro rAF após o [SPACE] pode chegar com um `ts`
+  // anterior ao `performance.now()` capturado no listener de keydown (o
+  // timestamp do rAF é definido antes do processamento do evento de input),
+  // gerando elapsed/t negativo por 1 frame — sem isso, getUtoTmapping busca
+  // um comprimento de arco negativo e retorna NaN.
+  return { getPointAt: (u) => getPoint(getUtoTmapping(Math.max(0, Math.min(u, 1)))) };
+}
+
+// Decomposição CPU/GPU (Green IT §3.A do CLAUDE.md, adicionado 2026-08-24 —
+// ver CHANGES-LOG.md). Frame Time (rAF) mistura JS + submissão de comandos +
+// tempo real de GPU; timestamp queries medem só o tempo de GPU, permitindo
+// isolar "Overhead de CPU" = Frame Time - Tempo de GPU. Ring buffer de N
+// slots evita travar o frame esperando o readback assíncrono do resultado —
+// o valor lido num quadro corresponde a um quadro alguns passos atrás, não
+// ao quadro atual (aceitável: o relatório usa médias sobre milhares de
+// quadros, não pares quadro-a-quadro exatos).
+const GPU_QUERY_SLOTS = 4;
+
+function criarMedidorGpu(device) {
+  if (!device.features.has("timestamp-query")) return null;
+
+  const slots = Array.from({ length: GPU_QUERY_SLOTS }, () => ({
+    querySet: device.createQuerySet({ type: "timestamp", count: 2 }),
+    resolveBuf: device.createBuffer({ size: 16, usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC }),
+    readBuf: device.createBuffer({ size: 16, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ }),
+    livre: true,
+  }));
+
+  let proximoSlot = 0;
+  let ultimoMs = null;
+
+  function reservarSlot() {
+    for (let tentativas = 0; tentativas < GPU_QUERY_SLOTS; tentativas++) {
+      const idx = (proximoSlot + tentativas) % GPU_QUERY_SLOTS;
+      if (slots[idx].livre) {
+        proximoSlot = (idx + 1) % GPU_QUERY_SLOTS;
+        slots[idx].livre = false;
+        return idx;
+      }
+    }
+    return -1; // todos os slots pendentes de leitura — pula a medição deste quadro
+  }
+
+  async function lerSlot(idx) {
+    const s = slots[idx];
+    try {
+      await s.readBuf.mapAsync(GPUMapMode.READ);
+      const arr = new BigInt64Array(s.readBuf.getMappedRange());
+      const ns = Number(arr[1] - arr[0]);
+      s.readBuf.unmap();
+      if (ns > 0 && ns < 1e9) ultimoMs = ns / 1e6; // descarta leituras degeneradas (>1s = query invalida)
+    } catch {
+      // leitura perdida (ex.: device lost) — mantem o ultimo valor valido
+    } finally {
+      s.livre = true;
+    }
+  }
+
+  return {
+    reservarSlot,
+    timestampWritesPass: (idx) => ({ querySet: slots[idx].querySet, beginningOfPassWriteIndex: 0, endOfPassWriteIndex: 1 }),
+    resolverSlot(encoder, idx) {
+      const s = slots[idx];
+      encoder.resolveQuerySet(s.querySet, 0, 2, s.resolveBuf, 0);
+      encoder.copyBufferToBuffer(s.resolveBuf, 0, s.readBuf, 0, 16);
+    },
+    lerSlot,
+    tempoMsAtual: () => ultimoMs,
+  };
 }
 
 const WGSL = /* wgsl */`
@@ -176,7 +301,13 @@ async function initWebGPU(canvas) {
     "color:#0ff;font-weight:bold"
   );
 
-  const device  = await adapter.requestDevice();
+  const suportaTimestamp = adapter.features.has("timestamp-query");
+  if (!suportaTimestamp) {
+    console.warn("[WEBGPU-RAW] Feature 'timestamp-query' indisponivel neste adaptador/driver — Tempo de GPU sera N/A.");
+  }
+  const device  = await adapter.requestDevice({
+    requiredFeatures: suportaTimestamp ? ["timestamp-query"] : [],
+  });
   const context = canvas.getContext("webgpu");
   const format  = navigator.gpu.getPreferredCanvasFormat();
   context.configure({ device, format, alphaMode: "opaque" });
@@ -364,17 +495,88 @@ function makeDepth(device, w, h) {
 }
 
 
+const TEXTURE_FORMAT = "rgba8unorm";
+
+function numMipLevels(width, height) {
+  return Math.floor(Math.log2(Math.max(width, height))) + 1;
+}
+
+// WebGPU não tem gl.generateMipmap — cada nível é gerado com um blit
+// (triângulo cobrindo a tela inteira, amostrando o nível anterior) via
+// render pass, técnica padrão da comunidade (ver LIMITACOES-VALIDACAO-LITERATURA.md item 4).
+function criarGeradorDeMipmaps(device) {
+  const mod = device.createShaderModule({
+    code: `
+      struct VSOut {
+        @builtin(position) pos: vec4<f32>,
+        @location(0) uv: vec2<f32>,
+      };
+      @vertex
+      fn vs(@builtin(vertex_index) vi: u32) -> VSOut {
+        var pos = array<vec2<f32>, 3>(
+          vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0)
+        );
+        var out: VSOut;
+        out.pos = vec4<f32>(pos[vi], 0.0, 1.0);
+        out.uv = pos[vi] * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5, 0.5);
+        return out;
+      }
+      @group(0) @binding(0) var texSampler: sampler;
+      @group(0) @binding(1) var texAnterior: texture_2d<f32>;
+      @fragment
+      fn fs(in: VSOut) -> @location(0) vec4<f32> {
+        return textureSample(texAnterior, texSampler, in.uv);
+      }
+    `,
+  });
+  const sampler = device.createSampler({ minFilter: "linear", magFilter: "linear" });
+  const pipeline = device.createRenderPipeline({
+    layout: "auto",
+    vertex: { module: mod, entryPoint: "vs" },
+    fragment: { module: mod, entryPoint: "fs", targets: [{ format: TEXTURE_FORMAT }] },
+    primitive: { topology: "triangle-list" },
+  });
+
+  return function gerarMipmaps(texture, levels) {
+    const encoder = device.createCommandEncoder();
+    for (let level = 1; level < levels; level++) {
+      const bindGroup = device.createBindGroup({
+        layout: pipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: sampler },
+          { binding: 1, resource: texture.createView({ baseMipLevel: level - 1, mipLevelCount: 1 }) },
+        ],
+      });
+      const pass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view: texture.createView({ baseMipLevel: level, mipLevelCount: 1 }),
+          loadOp: "clear", clearValue: [0, 0, 0, 0], storeOp: "store",
+        }],
+      });
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, bindGroup);
+      pass.draw(3);
+      pass.end();
+    }
+    device.queue.submit([encoder.finish()]);
+  };
+}
+
 // upload das imagens decodificadas e bind group (material único)
 async function createTextureBindGroups(device, textureBGL, sampler, texImages) {
   const cache = new Map();
+  const gerarMipmaps = criarGeradorDeMipmaps(device);
   for (const [key, image] of texImages) {
     const bitmap = image instanceof ImageBitmap ? image : await createImageBitmap(image);
+    const mipLevelCount = numMipLevels(bitmap.width, bitmap.height);
     const texture = device.createTexture({
       size: [bitmap.width, bitmap.height],
-      format: "rgba8unorm",
+      format: TEXTURE_FORMAT,
+      mipLevelCount,
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
     });
     device.queue.copyExternalImageToTexture({ source: bitmap }, { texture }, [bitmap.width, bitmap.height]);
+    gerarMipmaps(texture, mipLevelCount);
 
     cache.set(key, device.createBindGroup({
       layout: textureBGL,
@@ -390,7 +592,7 @@ async function createTextureBindGroups(device, textureBGL, sampler, texImages) {
 function createPlaceholderBindGroup(device, textureBGL, sampler) {
   const texture = device.createTexture({
     size: [1, 1],
-    format: "rgba8unorm",
+    format: TEXTURE_FORMAT,
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   });
   device.queue.writeTexture({ texture }, new Uint8Array([128, 128, 128, 255]), {}, { width: 1, height: 1 });
@@ -415,6 +617,10 @@ function exportReport(data, loadTime, autoStartEpochMs) {
   const dcMedio   = data.reduce((s, r) => s + r.dc, 0) / n;
   const dcMax     = Math.max(...data.map(r => r.dc));
 
+  const comGpu    = data.filter(r => typeof r.gpuMs === "number");
+  const gpuMedio  = comGpu.length ? comGpu.reduce((s, r) => s + r.gpuMs, 0) / comGpu.length : null;
+  const cpuOverheadMedio = gpuMedio !== null ? ftMedio - gpuMedio : null;
+
   let txt = "";
   txt += `API de Renderizacao: ${CONFIG_API.toUpperCase()}\n`;
   txt += MODO_INSTANCING
@@ -429,11 +635,13 @@ function exportReport(data, loadTime, autoStartEpochMs) {
   txt += `Tempo de Frame Maximo: ${ftMax.toFixed(2)} ms\n`;
   txt += `Draw Calls Medio: ${dcMedio.toFixed(1)}\n`;
   txt += `Draw Calls Maximo: ${dcMax}\n`;
+  txt += `Tempo de GPU Medio (ms): ${gpuMedio !== null ? gpuMedio.toFixed(3) : "N/A"}\n`;
+  txt += `Overhead de CPU Medio (ms): ${cpuOverheadMedio !== null ? cpuOverheadMedio.toFixed(3) : "N/A"}\n`;
   txt += `Total de Quadros Amostrados: ${n} frames\n`;
   txt += `\n--- DADOS BRUTOS QUADRO A QUADRO ---\n`;
-  txt += `Tempo Decorrido (ms),FPS Instantaneo,Tempo de Frame (ms),Draw Calls\n`;
+  txt += `Tempo Decorrido (ms),FPS Instantaneo,Tempo de Frame (ms),Draw Calls,Tempo de GPU (ms)\n`;
   data.forEach(r => {
-    txt += `${r.t.toFixed(0)},${r.fps.toFixed(1)},${r.ft.toFixed(2)},${r.dc}\n`;
+    txt += `${r.t.toFixed(0)},${r.fps.toFixed(1)},${r.ft.toFixed(2)},${r.dc},${typeof r.gpuMs === "number" ? r.gpuMs.toFixed(3) : ""}\n`;
   });
 
   const nomeArquivo = MODO_INSTANCING
@@ -465,6 +673,7 @@ async function main() {
   overlay.textContent = "Inicializando WebGPU...";
 
   const { device, context, format } = await initWebGPU(canvas);
+  const medidorGpu = criarMedidorGpu(device); // null se 'timestamp-query' nao suportado
 
   overlay.textContent = "Carregando e decomprimindo assets (Draco)...";
   const loadStart = performance.now();
@@ -483,6 +692,7 @@ async function main() {
   const waypointsAtivos = MODO_INSTANCING
     ? gerarWaypointsOrbitaInstancing(ladoGridInstancing, ESPACAMENTO_GRID_INSTANCING)
     : WAYPOINTS;
+  const curvaAtiva = criarCurvaCentripetal(waypointsAtivos);
 
   const zeroOffsetBindGroup = criarBindGroupOffset(device, offsetBGL, 0, 0, 0);
   const offsetBindGroups = MODO_INSTANCING
@@ -506,12 +716,14 @@ async function main() {
   });
 
   let depth = makeDepth(device, canvas.width, canvas.height);
+  let depthView = depth.createView();
 
   window.addEventListener("resize", () => {
     canvas.width  = window.innerWidth;
     canvas.height = window.innerHeight;
     depth.destroy();
     depth = makeDepth(device, canvas.width, canvas.height);
+    depthView = depth.createView();
   });
 
   let running    = false;
@@ -519,6 +731,7 @@ async function main() {
   let t0         = 0;
   let prevTs     = 0;
   let autoStartEpochMs = 0;
+  let ultimoOverlayMs  = 0; // throttle do overlay DOM (~6.7Hz) — metricsLog continua a cada quadro
 
   window.addEventListener("keydown", (e) => {
     if (e.code !== "Space") return;
@@ -548,19 +761,22 @@ async function main() {
     if (running) {
       const elapsed = ts - t0;
       const t       = Math.min(elapsed / DURATION_MS, 1.0);
-      eye    = catmullRomPoint(waypointsAtivos, t);
-      target = MODO_INSTANCING ? [0, 0, 0] : catmullRomPoint(waypointsAtivos, Math.min(t + 0.05, 1.0));
+      eye    = curvaAtiva.getPointAt(t);
+      target = MODO_INSTANCING ? [0, 0, 0] : curvaAtiva.getPointAt(Math.min(t + 0.05, 1.0));
 
       const dt = ts - prevTs;
       prevTs   = ts;
 
       if (dt > 1) {
-        metricsLog.push({ t: elapsed, fps: 1000 / dt, ft: dt, dc: drawCallsPorQuadro });
-        const last = metricsLog[metricsLog.length - 1];
-        overlay.textContent =
-          `WEBGPU-RAW | ${rotuloModo} | [SPACE] parar\n` +
-          `FPS: ${last.fps.toFixed(1)} | Frame: ${last.ft.toFixed(2)}ms\n` +
-          `Draw Calls: ${last.dc} | Progresso: ${(t * 100).toFixed(1)}%`;
+        metricsLog.push({ t: elapsed, fps: 1000 / dt, ft: dt, dc: drawCallsPorQuadro, gpuMs: medidorGpu?.tempoMsAtual() ?? null });
+        if (ts - ultimoOverlayMs > 150) {
+          ultimoOverlayMs = ts;
+          const last = metricsLog[metricsLog.length - 1];
+          overlay.textContent =
+            `WEBGPU-RAW | ${rotuloModo} | [SPACE] parar\n` +
+            `FPS: ${last.fps.toFixed(1)} | Frame: ${last.ft.toFixed(2)}ms\n` +
+            `Draw Calls: ${last.dc} | Progresso: ${(t * 100).toFixed(1)}%`;
+        }
       }
 
       if (t >= 1.0) {
@@ -572,8 +788,8 @@ async function main() {
           `[SPACE] para iniciar novamente`;
       }
     } else {
-      eye    = catmullRomPoint(waypointsAtivos, 0);
-      target = MODO_INSTANCING ? [0, 0, 0] : catmullRomPoint(waypointsAtivos, 0.05);
+      eye    = curvaAtiva.getPointAt(0);
+      target = MODO_INSTANCING ? [0, 0, 0] : curvaAtiva.getPointAt(0.05);
 
       if (!metricsLog.length) {
         overlay.textContent =
@@ -587,6 +803,8 @@ async function main() {
     const viewProj = mat4Mul(proj, view);
     device.queue.writeBuffer(ubo, 0, viewProj);
 
+    const querySlot = medidorGpu ? medidorGpu.reservarSlot() : -1;
+
     const enc  = device.createCommandEncoder();
     const pass = enc.beginRenderPass({
       colorAttachments: [{
@@ -596,11 +814,12 @@ async function main() {
         storeOp:    "store",
       }],
       depthStencilAttachment: {
-        view:            depth.createView(),
+        view:            depthView,
         depthClearValue: 1.0,
         depthLoadOp:     "clear",
         depthStoreOp:    "discard",
       },
+      ...(querySlot >= 0 ? { timestampWrites: medidorGpu.timestampWritesPass(querySlot) } : {}),
     });
 
     pass.setBindGroup(0, cameraBindGroup);
@@ -636,7 +855,9 @@ async function main() {
       }
     }
     pass.end();
+    if (querySlot >= 0) medidorGpu.resolverSlot(enc, querySlot);
     device.queue.submit([enc.finish()]);
+    if (querySlot >= 0) medidorGpu.lerSlot(querySlot);
 
     requestAnimationFrame(frame);
   }

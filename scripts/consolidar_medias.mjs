@@ -1,11 +1,11 @@
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { join, dirname } from "node:path";
 
 const DIRS = {
-  webgl: "resultados/webgl",
-  webgpu: "resultados/webgpu",
-  "webgl-raw": "resultados/web-gl_puro",
-  "webgpu-raw": "resultados/web-gpu_puro",
+  webgl: "resultados/threejs-webgl",
+  webgpu: "resultados/threejs-webgpu",
+  "webgl-raw": "resultados/raw-webgl",
+  "webgpu-raw": "resultados/raw-webgpu",
 };
 
 const RE_ARQUIVO = /^relatorio_benchmark_(webgl-raw|webgpu-raw|webgl|webgpu)_(cenario_[a-d]|instancing_n\d+)_run(\d+)\.txt$/;
@@ -54,6 +54,8 @@ function parseRelatorio(caminho) {
     drawCallsMaximo: numeroApos(txt, "Draw Calls Maximo: "),
     geometriasVram: numeroApos(txt, "Geometrias na VRAM (final): "),
     texturasVram: numeroApos(txt, "Texturas na VRAM (final): "),
+    gpuTempoMedio: numeroApos(txt, "Tempo de GPU Medio (ms): "),
+    cpuOverheadMedio: numeroApos(txt, "Overhead de CPU Medio (ms): "),
     totalQuadros: numeroApos(txt, "Total de Quadros Amostrados: "),
   };
 }
@@ -120,6 +122,8 @@ const COLUNAS = [
   ["draw_calls_maximo", (g) => media(g.runs.map((r) => r.drawCallsMaximo))],
   ["geometrias_vram_final", (g) => media(g.runs.map((r) => r.geometriasVram))],
   ["texturas_vram_final", (g) => media(g.runs.map((r) => r.texturasVram))],
+  ["gpu_tempo_medio_ms", (g) => media(g.runs.map((r) => r.gpuTempoMedio))],
+  ["cpu_overhead_medio_ms", (g) => media(g.runs.map((r) => r.cpuOverheadMedio))],
   ["total_quadros", (g) => media(g.runs.map((r) => r.totalQuadros))],
   ["potencia_media_w", (g) => media(g.runs.map((r) => r.potenciaMediaW))],
   ["consumo_acumulado_j", (g) => media(g.runs.map((r) => r.consumoJ))],
@@ -147,7 +151,8 @@ const csv = [COLUNAS.map(([nome]) => nome).join(",")]
   .concat(linhas.map((g) => COLUNAS.map(([, fn]) => fn(g)).join(",")))
   .join("\n");
 
-const destino = "resultados/conclusões/medias_por_teste.csv";
+const destino = "resultados/conclusões/dados-gerados/medias_por_teste.csv";
+mkdirSync(dirname(destino), { recursive: true });
 writeFileSync(destino, csv, "utf-8");
 console.log(`Consolidado ${linhas.length} combinacoes (modo x cenario) -> ${destino}`);
 const esperado = linhas.length ? Math.max(...linhas.map((g) => g.runs.length)) : 0;

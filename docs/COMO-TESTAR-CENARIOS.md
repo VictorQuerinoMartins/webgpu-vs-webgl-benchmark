@@ -135,11 +135,12 @@ Exemplos:
 
 | Pasta | Conteúdo |
 |---|---|
-| `resultados/webgl/` | Ensaios via Three.js + WebGL |
-| `resultados/webgpu/` | Ensaios via Three.js + WebGPU |
-| `resultados/web-gl_puro/` | Ensaios WebGL-RAW |
-| `resultados/web-gpu_puro/` | Ensaios WebGPU-RAW |
-| `resultados/conclusões/` | Análises e textos consolidados |
+| `resultados/threejs-webgl/` | Ensaios via Three.js + WebGL |
+| `resultados/threejs-webgpu/` | Ensaios via Three.js + WebGPU |
+| `resultados/raw-webgl/` | Ensaios WebGL-RAW |
+| `resultados/raw-webgpu/` | Ensaios WebGPU-RAW |
+| `resultados/conclusões/*.md` | Análises e textos (escritos à mão, não gerados por script) |
+| `resultados/conclusões/dados-gerados/` | CSV, tabela e comparações de deriva térmica (recriados por script) |
 
 ---
 

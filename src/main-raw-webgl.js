@@ -31,7 +31,7 @@ document.title = MODO_INSTANCING
   ? `Benchmark | WEBGL-RAW | Instancing N=${CONFIG_DENSIDADE_INSTANCING}`
   : `Benchmark | WEBGL-RAW | Cenário ${CONFIG_CENARIO.toUpperCase()}`;
 
-// mesma calibração do main.js; array [x,y,z] reaproveita catmullRomPoint().
+// mesma calibração do main.js; array [x,y,z] reaproveita criarCurvaCentripetal().
 const ESPACAMENTO_GRID_INSTANCING = 4;
 const ladoGridInstancing = MODO_INSTANCING ? Math.ceil(Math.cbrt(CONFIG_DENSIDADE_INSTANCING)) : 0;
 
@@ -109,25 +109,135 @@ function mat4Mul(a, b) {
   return o;
 }
 
-// Reproduz THREE.CatmullRomCurve3
-function catmullRomPoint(waypoints, t) {
-  const n  = waypoints.length;
-  const sc = Math.max(0, Math.min(t, 0.9999)) * (n - 1);
-  const i  = Math.floor(sc);
-  const lt = sc - i;
-  const p0 = waypoints[Math.max(0, i - 1)];
-  const p1 = waypoints[i];
-  const p2 = waypoints[Math.min(n - 1, i + 1)];
-  const p3 = waypoints[Math.min(n - 1, i + 2)];
-  const t2 = lt * lt, t3 = t2 * lt;
-  return [0, 1, 2].map(ax =>
-    0.5 * (
-      2 * p1[ax] +
-      (-p0[ax] + p2[ax]) * lt +
-      (2*p0[ax] - 5*p1[ax] + 4*p2[ax] - p3[ax]) * t2 +
-      (-p0[ax] + 3*p1[ax] - 3*p2[ax] + p3[ax]) * t3
-    )
-  );
+// Catmull-Rom centripetal + parametrização por comprimento de arco — replica
+// THREE.CatmullRomCurve3.getPoint()/getPointAt() (curveType padrão
+// 'centripetal', arcLengthDivisions=200) usada em main.js, pra que a câmera
+// passe pelo mesmo lugar no mesmo instante t nos dois modos de renderização.
+// Antes desta versão, a variante "uniforme" aqui usada acelerava/desacelerava
+// entre os waypoints (não-equidistantes) de forma diferente do main.js — ver
+// LIMITACOES-VALIDACAO-LITERATURA.md item 1.3 (achado 2026-08-24).
+function criarCurvaCentripetal(waypoints) {
+  const n = waypoints.length;
+  const dist2 = (a, b) => (a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2;
+  const extrapolar = (a, b) => [2*a[0]-b[0], 2*a[1]-b[1], 2*a[2]-b[2]]; // 2a - b
+
+  function getPoint(t) {
+    const p = (n - 1) * Math.max(0, Math.min(t, 1));
+    let intPoint = Math.floor(p);
+    let weight = p - intPoint;
+    if (weight === 0 && intPoint === n - 1) { intPoint = n - 2; weight = 1; }
+
+    const p1 = waypoints[intPoint];
+    const p2 = waypoints[Math.min(n - 1, intPoint + 1)];
+    const p0 = intPoint > 0 ? waypoints[intPoint - 1] : extrapolar(p1, p2);
+    const p3 = intPoint + 2 < n ? waypoints[intPoint + 2] : extrapolar(p2, p1);
+
+    let dt0 = Math.pow(dist2(p0, p1), 0.25);
+    let dt1 = Math.pow(dist2(p1, p2), 0.25);
+    let dt2 = Math.pow(dist2(p2, p3), 0.25);
+    if (dt1 < 1e-4) dt1 = 1.0;
+    if (dt0 < 1e-4) dt0 = dt1;
+    if (dt2 < 1e-4) dt2 = dt1;
+
+    const w2 = weight * weight, w3 = w2 * weight;
+    return [0, 1, 2].map((ax) => {
+      const x0 = p0[ax], x1 = p1[ax], x2 = p2[ax], x3 = p3[ax];
+      let tan1 = (x1 - x0) / dt0 - (x2 - x0) / (dt0 + dt1) + (x2 - x1) / dt1;
+      let tan2 = (x2 - x1) / dt1 - (x3 - x1) / (dt1 + dt2) + (x3 - x2) / dt2;
+      tan1 *= dt1; tan2 *= dt1;
+      const c0 = x1, c1 = tan1, c2 = -3*x1 + 3*x2 - 2*tan1 - tan2, c3 = 2*x1 - 2*x2 + tan1 + tan2;
+      return c0 + c1*weight + c2*w2 + c3*w3;
+    });
+  }
+
+  let arcLengths = null;
+  function getLengths(divisions = 200) {
+    if (arcLengths) return arcLengths;
+    const cache = [0];
+    let last = getPoint(0), sum = 0;
+    for (let i = 1; i <= divisions; i++) {
+      const cur = getPoint(i / divisions);
+      sum += Math.hypot(cur[0]-last[0], cur[1]-last[1], cur[2]-last[2]);
+      cache.push(sum);
+      last = cur;
+    }
+    arcLengths = cache;
+    return cache;
+  }
+
+  function getUtoTmapping(u) {
+    const arcLen = getLengths();
+    const il = arcLen.length;
+    const targetLen = u * arcLen[il - 1];
+    let low = 0, high = il - 1, i = 0;
+    while (low <= high) {
+      i = Math.floor(low + (high - low) / 2);
+      const cmp = arcLen[i] - targetLen;
+      if (cmp < 0) low = i + 1;
+      else if (cmp > 0) high = i - 1;
+      else { high = i; break; }
+    }
+    i = high;
+    if (arcLen[i] === targetLen) return i / (il - 1);
+    const segFrac = (targetLen - arcLen[i]) / (arcLen[i + 1] - arcLen[i]);
+    return (i + segFrac) / (il - 1);
+  }
+
+  // Clamp defensivo: o primeiro rAF após o [SPACE] pode chegar com um `ts`
+  // anterior ao `performance.now()` capturado no listener de keydown (o
+  // timestamp do rAF é definido antes do processamento do evento de input),
+  // gerando elapsed/t negativo por 1 frame — sem isso, getUtoTmapping busca
+  // um comprimento de arco negativo e retorna NaN.
+  return { getPointAt: (u) => getPoint(getUtoTmapping(Math.max(0, Math.min(u, 1)))) };
+}
+
+// Decomposição CPU/GPU (Green IT §3.A do CLAUDE.md, adicionado 2026-08-24 —
+// ver CHANGES-LOG.md e src/main-raw-webgpu.js para o equivalente WebGPU).
+// Pool de N query objects em rotação: begin/end é síncrono e por frame (sem
+// restrição de esperar leitura anterior), só a LEITURA do resultado é
+// assíncrona — por isso cada slot só é reutilizado depois que seu resultado
+// anterior foi consumido em pollPendentes().
+function criarMedidorGpu(gl) {
+  const ext = gl.getExtension("EXT_disjoint_timer_query_webgl2");
+  if (!ext) return null;
+
+  const POOL = 4;
+  const slots = Array.from({ length: POOL }, () => ({ query: gl.createQuery(), livre: true }));
+  let proximoSlot = 0;
+  let ultimoMs = null;
+
+  function reservarSlot() {
+    for (let tentativas = 0; tentativas < POOL; tentativas++) {
+      const idx = (proximoSlot + tentativas) % POOL;
+      if (slots[idx].livre) {
+        proximoSlot = (idx + 1) % POOL;
+        slots[idx].livre = false;
+        return idx;
+      }
+    }
+    return -1; // todos os slots pendentes de leitura — pula a medição deste quadro
+  }
+
+  function pollPendentes() {
+    const disjoint = gl.getParameter(ext.GPU_DISJOINT_EXT);
+    for (const s of slots) {
+      if (s.livre) continue;
+      if (!gl.getQueryParameter(s.query, gl.QUERY_RESULT_AVAILABLE)) continue;
+      if (!disjoint) {
+        const ns = gl.getQueryParameter(s.query, gl.QUERY_RESULT);
+        if (ns > 0 && ns < 1e9) ultimoMs = ns / 1e6; // descarta leituras degeneradas (>1s = query invalida)
+      }
+      s.livre = true;
+    }
+  }
+
+  return {
+    reservarSlot,
+    iniciar: (idx) => gl.beginQuery(ext.TIME_ELAPSED_EXT, slots[idx].query),
+    encerrar: () => gl.endQuery(ext.TIME_ELAPSED_EXT),
+    pollPendentes,
+    tempoMsAtual: () => ultimoMs,
+  };
 }
 
 // cenario A usa placeholder cinza 1x1 — um único pipeline para todos.
@@ -379,6 +489,10 @@ function exportReport(data, loadTime, autoStartEpochMs) {
   const dcMedio   = data.reduce((s, r) => s + r.dc, 0) / n;
   const dcMax     = Math.max(...data.map(r => r.dc));
 
+  const comGpu    = data.filter(r => typeof r.gpuMs === "number");
+  const gpuMedio  = comGpu.length ? comGpu.reduce((s, r) => s + r.gpuMs, 0) / comGpu.length : null;
+  const cpuOverheadMedio = gpuMedio !== null ? ftMedio - gpuMedio : null;
+
   let txt = "";
   txt += `API de Renderizacao: ${CONFIG_API.toUpperCase()}\n`;
   txt += MODO_INSTANCING
@@ -393,11 +507,13 @@ function exportReport(data, loadTime, autoStartEpochMs) {
   txt += `Tempo de Frame Maximo: ${ftMax.toFixed(2)} ms\n`;
   txt += `Draw Calls Medio: ${dcMedio.toFixed(1)}\n`;
   txt += `Draw Calls Maximo: ${dcMax}\n`;
+  txt += `Tempo de GPU Medio (ms): ${gpuMedio !== null ? gpuMedio.toFixed(3) : "N/A"}\n`;
+  txt += `Overhead de CPU Medio (ms): ${cpuOverheadMedio !== null ? cpuOverheadMedio.toFixed(3) : "N/A"}\n`;
   txt += `Total de Quadros Amostrados: ${n} frames\n`;
   txt += `\n--- DADOS BRUTOS QUADRO A QUADRO ---\n`;
-  txt += `Tempo Decorrido (ms),FPS Instantaneo,Tempo de Frame (ms),Draw Calls\n`;
+  txt += `Tempo Decorrido (ms),FPS Instantaneo,Tempo de Frame (ms),Draw Calls,Tempo de GPU (ms)\n`;
   data.forEach(r => {
-    txt += `${r.t.toFixed(0)},${r.fps.toFixed(1)},${r.ft.toFixed(2)},${r.dc}\n`;
+    txt += `${r.t.toFixed(0)},${r.fps.toFixed(1)},${r.ft.toFixed(2)},${r.dc},${typeof r.gpuMs === "number" ? r.gpuMs.toFixed(3) : ""}\n`;
   });
 
   const nomeArquivo = MODO_INSTANCING
@@ -428,6 +544,10 @@ async function main() {
   overlay.textContent = "Inicializando WebGL2...";
 
   const gl = initWebGL(canvas);
+  const medidorGpu = criarMedidorGpu(gl); // null se EXT_disjoint_timer_query_webgl2 indisponivel
+  if (!medidorGpu) {
+    console.warn("[WEBGL-RAW] Extensao 'EXT_disjoint_timer_query_webgl2' indisponivel — Tempo de GPU sera N/A.");
+  }
 
   overlay.textContent = "Carregando e decomprimindo assets (Draco)...";
   const loadStart = performance.now();
@@ -451,6 +571,7 @@ async function main() {
   const waypointsAtivos = MODO_INSTANCING
     ? gerarWaypointsOrbitaInstancing(ladoGridInstancing, ESPACAMENTO_GRID_INSTANCING)
     : WAYPOINTS;
+  const curvaAtiva = criarCurvaCentripetal(waypointsAtivos);
 
   window.addEventListener("resize", () => {
     canvas.width  = window.innerWidth;
@@ -462,6 +583,7 @@ async function main() {
   let t0         = 0;
   let prevTs     = 0;
   let autoStartEpochMs = 0;
+  let ultimoOverlayMs  = 0; // throttle do overlay DOM (~6.7Hz) — metricsLog continua a cada quadro
 
   window.addEventListener("keydown", (e) => {
     if (e.code !== "Space") return;
@@ -492,19 +614,22 @@ async function main() {
     if (running) {
       const elapsed = ts - t0;
       const t       = Math.min(elapsed / DURATION_MS, 1.0);
-      eye    = catmullRomPoint(waypointsAtivos, t);
-      target = MODO_INSTANCING ? [0, 0, 0] : catmullRomPoint(waypointsAtivos, Math.min(t + 0.05, 1.0));
+      eye    = curvaAtiva.getPointAt(t);
+      target = MODO_INSTANCING ? [0, 0, 0] : curvaAtiva.getPointAt(Math.min(t + 0.05, 1.0));
 
       const dt = ts - prevTs;
       prevTs   = ts;
 
       if (dt > 1) {
-        metricsLog.push({ t: elapsed, fps: 1000 / dt, ft: dt, dc: drawCallsPorQuadro });
-        const last = metricsLog[metricsLog.length - 1];
-        overlay.textContent =
-          `WEBGL-RAW | ${rotuloModo} | [SPACE] parar\n` +
-          `FPS: ${last.fps.toFixed(1)} | Frame: ${last.ft.toFixed(2)}ms\n` +
-          `Draw Calls: ${last.dc} | Progresso: ${(t * 100).toFixed(1)}%`;
+        metricsLog.push({ t: elapsed, fps: 1000 / dt, ft: dt, dc: drawCallsPorQuadro, gpuMs: medidorGpu?.tempoMsAtual() ?? null });
+        if (ts - ultimoOverlayMs > 150) {
+          ultimoOverlayMs = ts;
+          const last = metricsLog[metricsLog.length - 1];
+          overlay.textContent =
+            `WEBGL-RAW | ${rotuloModo} | [SPACE] parar\n` +
+            `FPS: ${last.fps.toFixed(1)} | Frame: ${last.ft.toFixed(2)}ms\n` +
+            `Draw Calls: ${last.dc} | Progresso: ${(t * 100).toFixed(1)}%`;
+        }
       }
 
       if (t >= 1.0) {
@@ -516,8 +641,8 @@ async function main() {
           `[SPACE] para iniciar novamente`;
       }
     } else {
-      eye    = catmullRomPoint(waypointsAtivos, 0);
-      target = MODO_INSTANCING ? [0, 0, 0] : catmullRomPoint(waypointsAtivos, 0.05);
+      eye    = curvaAtiva.getPointAt(0);
+      target = MODO_INSTANCING ? [0, 0, 0] : curvaAtiva.getPointAt(0.05);
 
       if (!metricsLog.length) {
         overlay.textContent =
@@ -529,6 +654,9 @@ async function main() {
 
     const view     = mat4LookAt(eye, target, [0, 1, 0]);
     const viewProj = mat4Mul(proj, view);
+
+    const querySlot = medidorGpu ? medidorGpu.reservarSlot() : -1;
+    if (querySlot >= 0) medidorGpu.iniciar(querySlot);
 
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.enable(gl.DEPTH_TEST);
@@ -571,6 +699,9 @@ async function main() {
         gl.drawElements(gl.TRIANGLES, indexCount, glType, 0);
       }
     }
+
+    if (querySlot >= 0) medidorGpu.encerrar();
+    medidorGpu?.pollPendentes();
 
     requestAnimationFrame(frame);
   }

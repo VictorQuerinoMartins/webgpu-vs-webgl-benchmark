@@ -2,9 +2,10 @@
 // =====================================================================
 // Correlaciona um relatorio_benchmark_*.txt (FPS/Frame Time, gerado pelo
 // app em src/main.js ou src/main-raw-*.js) com um log de
-// potencia+VRAM+temperatura da GPU (timestamp,watts,vram_mb,temp_c em
-// Hz=1, gerado por scripts/automatizar_coleta.mjs ou
-// scripts/power_monitor.sh) para calcular: a dimensao "Computacao Verde"
+// potencia+VRAM+temperatura da GPU (timestamp,watts,vram_mb,temp_c a 10 Hz,
+// epoch em ms — gerado por scripts/automatizar_coleta.mjs; tambem aceita o
+// formato antigo de scripts/power_monitor.sh, 1 Hz e epoch em s) para
+// calcular: a dimensao "Computacao Verde"
 // da secao 3.B do CLAUDE.md (Joules/Frame, Frames/Watt, Consumo Acumulado
 // em J/Wh), a metrica de VRAM (MB) da secao 3.A — que nenhum dos 4
 // renderizadores consegue medir sozinho de dentro do navegador — e a
@@ -112,10 +113,12 @@ function parseRelatorio(caminho) {
 }
 
 // ---------------------------------------------------------------------
-// 2. Parse do power_log.csv. Formato atual (automatizar_coleta.mjs /
-//    power_monitor.sh): timestamp,watts,vram_mb,temp_c. Formatos antigos
-//    (2 ou 3 colunas) ainda sao aceitos — os campos ausentes ficam
-//    undefined e as secoes correspondentes sao omitidas na saida.
+// 2. Parse do power_log.csv. Formato atual (automatizar_coleta.mjs, desde
+//    2026-08-26): timestamp,watts,vram_mb,temp_c,clock_mhz,throttle_sw,
+//    throttle_hw. Formatos antigos (ate 4 colunas, sem clock/throttle, ou
+//    power_monitor.sh com so timestamp+watts) ainda sao aceitos — os campos
+//    ausentes ficam undefined e as secoes correspondentes sao omitidas na
+//    saida.
 // ---------------------------------------------------------------------
 function parsePowerLog(caminho) {
   const texto = readFileSync(caminho, "utf-8");
@@ -124,17 +127,28 @@ function parsePowerLog(caminho) {
   const amostras = [];
   for (const linha of linhas) {
     if (linha.toLowerCase().startsWith("timestamp")) continue; // cabecalho
-    const [tsStr, wattsStr, vramStr, tempStr] = linha.split(",");
-    const epochSec = Number(tsStr);
+    const [tsStr, wattsStr, vramStr, tempStr, clockStr, throttleSwStr, throttleHwStr] = linha.split(",");
+    const tsRaw = Number(tsStr);
+    // automatizar_coleta.mjs (10 Hz, atual) grava epoch em ms; power_monitor.sh
+    // (1 Hz, formato antigo/manual) grava epoch em s via `date +%s`. Epoch em
+    // ms hoje e da ordem de 1.7e12; em s, da ordem de 1.7e9 — limiar de 1e12
+    // distingue os dois formatos sem precisar de um campo extra no CSV.
+    const epochSec = tsRaw > 1e12 ? tsRaw / 1000 : tsRaw;
     const watts = Number(wattsStr);
     const vramMb = vramStr !== undefined ? Number(vramStr) : undefined;
     const tempC = tempStr !== undefined ? Number(tempStr) : undefined;
+    const clockMhz = clockStr !== undefined ? Number(clockStr) : undefined;
+    const throttleSw = throttleSwStr !== undefined ? throttleSwStr.trim() === "Active" : undefined;
+    const throttleHw = throttleHwStr !== undefined ? throttleHwStr.trim() === "Active" : undefined;
     if (Number.isFinite(epochSec) && Number.isFinite(watts)) {
       amostras.push({
         epochSec,
         watts,
         vramMb: Number.isFinite(vramMb) ? vramMb : undefined,
         tempC: Number.isFinite(tempC) ? tempC : undefined,
+        clockMhz: Number.isFinite(clockMhz) ? clockMhz : undefined,
+        throttleSw,
+        throttleHw,
       });
     }
   }
@@ -150,8 +164,9 @@ function parsePowerLog(caminho) {
 // ---------------------------------------------------------------------
 // 3. Interpolacao linear de um campo numerico (watts ou vramMb) num
 //    instante absoluto (epoch s). Fora do intervalo amostrado, satura no
-//    valor da amostra mais proxima (o nvidia-smi so amostra a 1 Hz; o
-//    valor real nao muda instantaneamente fora da janela monitorada).
+//    valor da amostra mais proxima (o nvidia-smi so amostra a intervalos
+//    discretos; o valor real nao muda instantaneamente fora da janela
+//    monitorada).
 // ---------------------------------------------------------------------
 function criarInterpolador(amostras, campo) {
   return function (epochSec) {
@@ -213,6 +228,9 @@ const getVram = temVram ? criarInterpolador(amostrasPotencia, "vramMb") : null;
 const temTemp = amostrasPotencia.every((a) => a.tempC !== undefined);
 const getTemp = temTemp ? criarInterpolador(amostrasPotencia, "tempC") : null;
 
+const temClock = amostrasPotencia.every((a) => a.clockMhz !== undefined);
+const temThrottle = amostrasPotencia.every((a) => a.throttleSw !== undefined && a.throttleHw !== undefined);
+
 const tInicioS = relatorio.autoStartEpochMs / 1000;
 const tFimS = tInicioS + DURACAO_ENSAIO_S;
 
@@ -258,6 +276,27 @@ const derivaTermicaC = temTemp
   ? framesComEnergia[framesComEnergia.length - 1].tempCInst - framesComEnergia[0].tempCInst
   : null;
 
+// --- Clock e throttling termico (secao nova, 2026-08-24/26): a temperatura
+// de nucleo satura num teto de fabrica e por isso nao revela throttling
+// sustentado (ver comentario de NVIDIA_SMI_QUERY_LOOP em
+// automatizar_coleta.mjs) — clock real e o flag do driver mostram o efeito
+// direto. Calculado sobre as amostras BRUTAS do power_log dentro da janela
+// do ensaio (nao por-quadro), porque throttling e um flag booleano, nao
+// interpola.
+const amostrasNaJanela = amostrasPotencia.filter((a) => a.epochSec >= tInicioS && a.epochSec <= tFimS);
+const clockMedioMhz = temClock ? media(amostrasNaJanela.map((a) => a.clockMhz)) : null;
+const clockMinMhz = temClock ? Math.min(...amostrasNaJanela.map((a) => a.clockMhz)) : null;
+const clockMaxMhz = temClock ? Math.max(...amostrasNaJanela.map((a) => a.clockMhz)) : null;
+const pctThrottleSw = temThrottle
+  ? (100 * amostrasNaJanela.filter((a) => a.throttleSw).length) / amostrasNaJanela.length
+  : null;
+const pctThrottleHw = temThrottle
+  ? (100 * amostrasNaJanela.filter((a) => a.throttleHw).length) / amostrasNaJanela.length
+  : null;
+const pctThrottleQualquer = temThrottle
+  ? (100 * amostrasNaJanela.filter((a) => a.throttleSw || a.throttleHw).length) / amostrasNaJanela.length
+  : null;
+
 // --- Consumo acumulado real do ensaio: integral da curva de potencia bruta ---
 const consumoAcumuladoJ = integrarConsumoJoules(amostrasPotencia, getWatts, tInicioS, tFimS);
 const consumoAcumuladoWh = consumoAcumuladoJ / 3600;
@@ -272,7 +311,7 @@ out += `API de Renderizacao: ${relatorio.api}\n`;
 out += `Cenario: ${relatorio.cenario}\n`;
 out += `Timestamp Unix de Inicio do Ensaio (ms): ${relatorio.autoStartEpochMs}\n`;
 out += `Janela do Ensaio: ${DURACAO_ENSAIO_S.toFixed(2)} s\n`;
-out += `Amostras de GPU Utilizadas (nvidia-smi, 1 Hz): ${amostrasPotencia.length}\n`;
+out += `Amostras de GPU Utilizadas (nvidia-smi): ${amostrasPotencia.length}\n`;
 out += `\n--- CONSUMO ACUMULADO DO ENSAIO (integral da curva de potencia) ---\n`;
 out += `Potencia Media (ponderada pelo tempo, janela de 60s): ${potenciaMediaJanela.toFixed(2)} W\n`;
 out += `Consumo Acumulado do Ensaio: ${consumoAcumuladoJ.toFixed(2)} J (${consumoAcumuladoWh.toFixed(4)} Wh)\n`;
@@ -308,6 +347,27 @@ if (temTemp) {
   out += `Indisponivel: log de potencia sem coluna de temperatura (formato antigo).\n`;
 }
 
+if (temClock || temThrottle) {
+  out += `\n--- CLOCK E THROTTLING TERMICO (via nvidia-smi, ${amostrasNaJanela.length} amostras na janela do ensaio) ---\n`;
+  if (temClock) {
+    out += `Clock de Nucleo Medio: ${clockMedioMhz.toFixed(0)} MHz\n`;
+    out += `Clock de Nucleo Minimo: ${clockMinMhz.toFixed(0)} MHz\n`;
+    out += `Clock de Nucleo Maximo: ${clockMaxMhz.toFixed(0)} MHz\n`;
+  }
+  if (temThrottle) {
+    out += `Tempo em SW Thermal Slowdown: ${pctThrottleSw.toFixed(1)} %\n`;
+    out += `Tempo em HW Thermal Slowdown: ${pctThrottleHw.toFixed(1)} %\n`;
+    out += `Tempo em Throttling Termico (SW ou HW): ${pctThrottleQualquer.toFixed(1)} %\n`;
+  }
+  out += `  (a temperatura de nucleo do nvidia-smi satura num teto de fabrica e por\n`;
+  out += `  isso nao revela throttling sustentado por si so -- clock e o flag do\n`;
+  out += `  proprio driver mostram o efeito direto, sem precisar inferir a partir\n`;
+  out += `  de temperatura+potencia+FPS.)\n`;
+} else {
+  out += `\n--- CLOCK E THROTTLING TERMICO ---\n`;
+  out += `Indisponivel: log de potencia sem colunas de clock/throttling (formato anterior a 2026-08-26).\n`;
+}
+
 out += `\n--- DADOS BRUTOS QUADRO A QUADRO (COM ENERGIA${temVram ? ", VRAM" : ""}${temTemp ? " E TEMPERATURA" : ""}) ---\n`;
 let cabecalho = "Tempo Decorrido (ms),FPS Instantaneo,Tempo de Frame (ms),Potencia Instantanea (W),Energia do Quadro (J),Frames por Watt";
 if (temVram) cabecalho += ",VRAM (MB)";
@@ -330,5 +390,7 @@ console.log(
   `[analisar_energia] Consumo acumulado: ${consumoAcumuladoJ.toFixed(2)} J ` +
   `(${consumoAcumuladoWh.toFixed(4)} Wh) | Potencia media: ${potenciaMediaJanela.toFixed(2)} W` +
   (temVram ? ` | VRAM media: ${vramMediaMb.toFixed(1)} MB` : "") +
-  (temTemp ? ` | Temp media: ${tempMediaC.toFixed(1)}°C (deriva: ${derivaTermicaC >= 0 ? "+" : ""}${derivaTermicaC.toFixed(1)}°C)` : "")
+  (temTemp ? ` | Temp media: ${tempMediaC.toFixed(1)}°C (deriva: ${derivaTermicaC >= 0 ? "+" : ""}${derivaTermicaC.toFixed(1)}°C)` : "") +
+  (temClock ? ` | Clock medio: ${clockMedioMhz.toFixed(0)}MHz` : "") +
+  (temThrottle ? ` | Throttling termico: ${pctThrottleQualquer.toFixed(1)}% do ensaio` : "")
 );

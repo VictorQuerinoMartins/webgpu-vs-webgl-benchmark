@@ -1,7 +1,8 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 
-const ORIGEM = "resultados/conclusões/medias_por_teste.csv";
-const DESTINO = "resultados/conclusões/tabela_medias.txt";
+const ORIGEM = "resultados/conclusões/dados-gerados/medias_por_teste.csv";
+const DESTINO = "resultados/conclusões/dados-gerados/tabela_medias.txt";
 
 const ORDEM_CENARIO = ["cenario_a", "cenario_b", "cenario_c", "cenario_d", "instancing_n500", "instancing_n2000", "instancing_n5000"];
 const ORDEM_MODO = ["webgl", "webgpu", "webgl-raw", "webgpu-raw"];
@@ -69,9 +70,22 @@ const greenIt = tabela(`Tabela 2 - Dimensao de Computacao Verde (Green IT) (medi
   ["Temp. Media (C)", (l) => num(l.temperatura_media_c, 1)],
 ], dados);
 
+// Decomposicao CPU/GPU via timestamp queries (WebGPU nativo / EXT_disjoint_timer_query_webgl2)
+// — adicionado 2026-08-24, ver CHANGES-LOG.md e LIMITACOES-VALIDACAO-LITERATURA.md.
+const cpuGpu = tabela(`Tabela 3 - Decomposicao CPU/GPU via Timestamp Queries (media de ${repeticoes} repeticoes)`, [
+  ["Frame Time Medio (ms)", (l) => num(l.frame_time_medio_ms, 2)],
+  ["Tempo de GPU Medio (ms)", (l) => num(l.gpu_tempo_medio_ms, 3)],
+  ["Overhead de CPU Medio (ms)", (l) => num(l.cpu_overhead_medio_ms, 3)],
+  ["Overhead de CPU (%)", (l) => {
+    const ft = Number(l.frame_time_medio_ms), cpu = Number(l.cpu_overhead_medio_ms);
+    return Number.isFinite(ft) && Number.isFinite(cpu) && ft > 0 ? `${((cpu / ft) * 100).toFixed(1)}%` : "-";
+  }],
+], dados);
+
 const cabecalhoGeral =
   `Medias por Teste - WebGL vs WebGPU (Three.js e RAW)\n` +
   `Fonte: ${ORIGEM} (${dados.length} combinacoes modo x cenario, ${repeticoes} repeticoes cada)\n\n`;
 
-writeFileSync(DESTINO, cabecalhoGeral + desempenho + "\n" + greenIt, "utf-8");
+mkdirSync(dirname(DESTINO), { recursive: true });
+writeFileSync(DESTINO, cabecalhoGeral + desempenho + "\n" + greenIt + "\n" + cpuGpu, "utf-8");
 console.log(`Tabela gerada -> ${DESTINO}`);
