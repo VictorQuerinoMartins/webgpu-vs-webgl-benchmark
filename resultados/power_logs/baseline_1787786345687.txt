@@ -1,0 +1,19 @@
+Baseline do sistema — capturado antes do lote (idle, antes do aquecimento)
+Timestamp: 2026-08-26T23:19:06.471Z
+
+--- GPU (nvidia-smi) ---
+Temperatura: 55 C
+Potencia: 8.73 W
+VRAM usada: 398 MiB
+Utilizacao: 12 %
+
+--- Energia (Windows) ---
+Plano ativo: GUID do Esquema de Energia: 586f4e66-3815-46e5-9779-15d3db9541da  (Acer)
+Alimentacao: Na tomada (AC)
+
+--- Processos visiveis do usuario (5) ---
+20672	ApplicationFrameHost	Configurações
+30460	Code	Fluxo de imagem 3D com t… - webgpu-vs-webgl-benchmark - Visual Studio Code
+12208	NVIDIA Overlay	NVIDIA GeForce Overlay
+22736	SystemSettings	Configurações
+18400	TextInputHost	Experiência de Entrada do Windows
