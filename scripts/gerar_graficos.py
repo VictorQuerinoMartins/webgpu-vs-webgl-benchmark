@@ -71,25 +71,37 @@ def listar_arquivos(dir_base):
                 continue
             for arquivo in sub_dir.iterdir():
                 if RE_ARQUIVO.match(arquivo.name):
-                    arquivos.append(arquivo)
+                    arquivos.append((ensaio_dir.name, arquivo))
     return arquivos
 
 
 def carregar_runs():
-    """Retorna dict[modo][rotulo] = lista de dicts por repeticao."""
+    """Retorna dict[modo][rotulo] = lista de dicts por repeticao.
+
+    Cada registro carrega "rodada" (ensaioN_runM) -- a unidade de bloco da
+    coleta (automatizar_coleta.mjs roda todas as combinacoes 1x por rodada,
+    embaralhadas). Nao e um pareamento crossover (WebGL e WebGPU nao medem a
+    mesma execucao), mas corresponde a mesma rodada de coleta -- usado para
+    parear pontos individuais no grafico de dispersao de energia sem inventar
+    uma correspondencia arbitraria.
+    """
     grupos = {modo: {} for modo in MODOS}
     for modo, dir_base in DIRS.items():
-        for caminho in listar_arquivos(dir_base):
+        for ensaio_nome, caminho in listar_arquivos(dir_base):
             m = RE_ARQUIVO.match(caminho.name)
-            _, rotulo, _run = m.groups()
+            _, rotulo, run = m.groups()
             txt = caminho.read_text(encoding="utf-8")
             caminho_energia = caminho.with_name(caminho.stem + "_energia.txt")
             energia_txt = caminho_energia.read_text(encoding="utf-8") if caminho_energia.exists() else ""
             registro = {
+                "rodada": f"{ensaio_nome}_run{run}",
                 "frame_time_medio_ms": numero_apos(txt, "Tempo de Frame Medio: "),
                 "vram_media_mb": numero_apos(energia_txt, "VRAM Media durante o Ensaio: "),
                 "frames_por_watt": numero_apos(energia_txt, "Coeficiente de Eficiencia Medio (Frames por Watt): "),
                 "potencia_media_w": numero_apos(energia_txt, "Potencia Media (ponderada pelo tempo, janela de 60s): "),
+                "energia_por_frame_j": numero_apos(energia_txt, "Assinatura Energetica Media por Quadro (Joules/Frame): "),
+                "draw_calls_medio": numero_apos(txt, "Draw Calls Medio: "),
+                "cpu_overhead_medio_ms": numero_apos(txt, "Overhead de CPU Medio (ms): "),
             }
             grupos[modo].setdefault(rotulo, []).append(registro)
     return grupos
@@ -200,7 +212,7 @@ def fig_cenario_d_colapso(grupos):
     maximos = []
     for m in MODOS:
         vals = []
-        for caminho in listar_arquivos(DIRS[m]):
+        for _ensaio_nome, caminho in listar_arquivos(DIRS[m]):
             if RE_ARQUIVO.match(caminho.name).group(2) != "cenario_d":
                 continue
             txt = caminho.read_text(encoding="utf-8")
@@ -259,6 +271,100 @@ def fig_framesporwatt(grupos):
     plt.close(fig)
 
 
+# Paleta categorica Okabe-Ito (colorblind-safe), validada com scripts/validate_palette.js
+# do skill de dataviz -- hues bem distintos entre si em vez de degrade da mesma cor,
+# a pedido do autor do TCC (daltonico). "D" e "N=5000" compartilham o roxo-avermelhado
+# (unico repeat entre os dois paineis; Okabe-Ito so tem 6 hues que passam sozinhos no
+# validador, para 7 categorias precisadas) -- paineis e legendas separados mitigam isso.
+RAMPA_CENARIO = {"cenario_a": "#56B4E9", "cenario_b": "#E69F00", "cenario_c": "#009E73", "cenario_d": "#CC79A7"}
+RAMPA_DENSIDADE = {"instancing_n500": "#0072B2", "instancing_n2000": "#D55E00", "instancing_n5000": "#CC79A7"}
+
+
+def _ponto(grupos, rotulo, campo, modo="webgpu"):
+    return media_std(grupos, modo, rotulo, campo)
+
+
+def _pontos_por_rodada(grupos, modo, rotulo, campo):
+    """dict[rodada] = valor, para parear WebGL/WebGPU pela mesma rodada de coleta."""
+    runs = grupos.get(modo, {}).get(rotulo, [])
+    return {r["rodada"]: r[campo] for r in runs if r.get(campo) is not None and r.get("rodada")}
+
+
+def _painel_dispersao_energia(ax, categorias, categoria_labels, rampa, grupos, titulo):
+    xs_todos, ys_todos = [], []
+    for cat in categorias:
+        cor = rampa[cat]
+
+        # Nuvem de pontos individuais (todas as rodadas: 3 ensaios x 3 repeticoes = 9),
+        # pareados por rodada de coleta (nao e crossover -- ver docstring de carregar_runs).
+        webgl_rodadas = _pontos_por_rodada(grupos, "webgl", cat, "energia_por_frame_j")
+        webgpu_rodadas = _pontos_por_rodada(grupos, "webgpu", cat, "energia_por_frame_j")
+        rodadas_comuns = sorted(set(webgl_rodadas) & set(webgpu_rodadas))
+        xs_ind = [webgl_rodadas[r] for r in rodadas_comuns]
+        ys_ind = [webgpu_rodadas[r] for r in rodadas_comuns]
+        ax.scatter(xs_ind, ys_ind, s=22, color=cor, alpha=0.45, linewidths=0, zorder=2)
+
+        # Media +- desvio-padrao, em destaque sobre a nuvem.
+        x, xerr = _ponto(grupos, cat, "energia_por_frame_j", "webgl")
+        y, yerr = _ponto(grupos, cat, "energia_por_frame_j", "webgpu")
+        ax.errorbar(
+            x, y, xerr=xerr, yerr=yerr, fmt="o", markersize=9, color=cor,
+            markeredgecolor="#333333", markeredgewidth=0.9, ecolor="#333333",
+            elinewidth=1.0, capsize=3, label=f"{categoria_labels[cat]} (n={len(rodadas_comuns)})", zorder=4,
+        )
+        xs_todos.extend(xs_ind + [x])
+        ys_todos.extend(ys_ind + [y])
+    lim = max(xs_todos + ys_todos) * 1.15
+    ax.plot([0, lim], [0, lim], linestyle="--", linewidth=1.2, color="#999999", zorder=1)
+    ax.set_xlim(0, lim)
+    ax.set_ylim(0, lim)
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_xlabel("Energia/Quadro — WebGL (J)")
+    ax.set_ylabel("Energia/Quadro — WebGPU (J)")
+    ax.set_title(titulo)
+    ax.legend(loc="upper left", frameon=False, handletextpad=0.4, borderaxespad=0.2, fontsize=8)
+
+
+def _painel_parametros(ax, categorias, categoria_labels, rampa, grupos, titulo):
+    for cat in categorias:
+        x, xerr = _ponto(grupos, cat, "draw_calls_medio")
+        y, yerr = _ponto(grupos, cat, "cpu_overhead_medio_ms")
+        cor = rampa[cat]
+        ax.errorbar(
+            x, y, xerr=xerr, yerr=yerr, fmt="s", markersize=8, color=cor,
+            markeredgecolor="#333333", markeredgewidth=0.6, ecolor="#333333",
+            elinewidth=0.8, capsize=3, label=categoria_labels[cat], zorder=3,
+        )
+    ax.set_xlabel("Draw Calls Médio (WebGPU)")
+    ax.set_ylabel("Overhead de CPU Médio (ms, WebGPU)")
+    ax.set_title(titulo)
+
+
+def fig_dispersao_energia(grupos):
+    """Dispersao energia WebGPU (eixo Y) vs WebGL (eixo X) por cenario/densidade,
+    com linha de paridade (y=x) e painel inferior de parametros (Draw Calls x
+    Overhead de CPU) explicando os desvios -- adaptado do desenho de Feitosa et
+    al. (2017, Fig. 6/7), que compara energia da solucao padrao de projeto (eixo
+    Y) contra a alternativa (eixo X) por unidade de analise. Unidade de analise
+    aqui e o par cenario/densidade (nao o frame individual), pois WebGL e WebGPU
+    nao formam um par casado (crossover) no nivel de frame ou de repeticao --
+    apenas no nivel da mesma condicao experimental testada nas duas APIs.
+    """
+    fig, axs = plt.subplots(2, 2, figsize=(7.8, 7.2), height_ratios=[1.3, 1])
+
+    _painel_dispersao_energia(axs[0, 0], CENARIOS, CENARIO_LABEL, RAMPA_CENARIO, grupos,
+                               "(a) Progressão de textura")
+    _painel_dispersao_energia(axs[0, 1], DENSIDADES, DENSIDADE_LABEL, RAMPA_DENSIDADE, grupos,
+                               "(b) Estresse de Draw Calls")
+    _painel_parametros(axs[1, 0], CENARIOS, CENARIO_LABEL, RAMPA_CENARIO, grupos, "(c) Parâmetros — textura")
+    _painel_parametros(axs[1, 1], DENSIDADES, DENSIDADE_LABEL, RAMPA_DENSIDADE, grupos, "(d) Parâmetros — instancing")
+
+    fig.suptitle("Energia por Quadro: WebGPU vs. WebGL, por condição experimental", y=1.01)
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / "fig_dispersao_energia.png")
+    plt.close(fig)
+
+
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     estilo_cientifico()
@@ -269,6 +375,7 @@ def main():
     fig_frametime_instancing(grupos)
     fig_vram_instancing(grupos)
     fig_framesporwatt(grupos)
+    fig_dispersao_energia(grupos)
     print(f"Graficos escritos em: {OUT_DIR}")
 
 
