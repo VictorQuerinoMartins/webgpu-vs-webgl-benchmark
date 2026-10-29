@@ -135,8 +135,13 @@ como soma das energias por quadro, por dois motivos:
   *hardware alvo do estresse gráfico*, não o TCO energético completo da
   máquina.
 - **Resolução temporal:** a amostragem é de 10 Hz (`nvidia-smi
-  --loop-ms=100`). A interpolação linear suaviza, mas não reconstrói,
-  variações de potência mais rápidas que 100 ms.
+  --loop-ms=100`), mas o sensor de potência da RTX 3050 Laptop só atualiza o
+  valor a cada ~500 ms (medido sob carga: 123 mudanças em 62 s, intervalo
+  entre 485 e 513 ms). A resolução efetiva é, portanto, ~2 Hz. Os 10 Hz
+  evitam perder atualizações e reduzem a defasagem de leitura, mas a
+  interpolação linear não reconstrói variações de potência mais rápidas
+  que ~0,5 s (por exemplo, picos de Frame Time isolados no Cenário D). A
+  energia acumulada em 60 s, por ser uma integral, é pouco afetada.
 - **Potência em repouso incluída:** o `power.draw` é da dGPU inteira, com o
   piso de potência de repouso. Os `baseline_*.txt` em `resultados/power_logs/`
   permitem descontá-lo, se necessário.

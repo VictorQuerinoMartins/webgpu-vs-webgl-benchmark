@@ -155,13 +155,11 @@ const NVIDIA_SMI_QUERY = "power.draw,memory.used,temperature.gpu";
 // Amostrador oficial usa --loop-ms=100 (10 Hz) com o timestamp do proprio
 // nvidia-smi (precisao de ms) em vez de Date.now() apos cada chamada — evita
 // tanto o overhead de spawnar um processo novo a cada 100ms quanto o jitter
-// de agendamento do setInterval do Node. 10 Hz em vez de 1 Hz porque o
-// sensor de potencia da NVIDIA so fica "ativo" por uma fracao do intervalo
-// entre leituras (Yang, Adamek e Armour, "Accurate and Convenient Energy
-// Measurements for GPUs", SC24, DOI 10.1109/SC41406.2024.00028) — amostrar
-// mais rapido reduz a chance de perder transientes de potencia entre
-// leituras, especialmente relevante no Cenario D (picos de Frame Time de
-// ate 2,9s dentro do mesmo ensaio).
+// de agendamento do setInterval do Node. Medido em 2026-10-29 na RTX 3050
+// Laptop sob carga: power.draw so muda ~a cada 500 ms (2 Hz). 10 Hz nao da
+// resolucao de 100 ms; so evita perder uma atualizacao (1 Hz perderia metade)
+// e reduz a defasagem de leitura. Ver Yang, Adamek e Armour (SC24,
+// DOI 10.1109/SC41406.2024.00028) sobre o sensor atualizar so em janelas.
 //
 // clocks.current.graphics + clocks_throttle_reasons.*_thermal_slowdown
 // (adicionado 2026-08-26): a temperatura de nucleo satura num teto de

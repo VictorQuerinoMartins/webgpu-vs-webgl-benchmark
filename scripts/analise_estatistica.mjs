@@ -238,7 +238,7 @@ assert(Math.abs(mannWhitney([1, 2, 3], [4, 5, 6]).p - 0.1) < 1e-9);
 const f = (v, c = 4) => (Number.isFinite(v) ? v.toFixed(c) : "");
 const exp = (v) => (Number.isFinite(v) ? v.toExponential(3) : "");
 const cab = "par,cenario,metrica,n_webgl,n_webgpu,media_webgl,media_webgpu,dif,dif_pct,t,gl,p_welch,ic95_lo,ic95_hi,d_cohen,g_hedges,p_mannwhitney,metodo_mw,"
-  + "p_brunner_munzel,p_bm_holm,p_welch_holm,a12,cliff_delta,magnitude_a12,ic_boot_lo,ic_boot_hi,p_pareado,n_pares,pares_webgpu_maior,dif_pareada_media";
+  + "p_brunner_munzel,familia,p_bm_holm,p_welch_holm,a12,cliff_delta,magnitude_a12,ic_boot_lo,ic_boot_hi,p_pareado,n_pares,pares_webgpu_maior,dif_pareada_media";
 const rng = mulberry32(20260101);
 const linhas = [];
 for (const [gl, gpu] of PARES) {
@@ -259,11 +259,18 @@ for (const [gl, gpu] of PARES) {
     }
   }
 }
-const hBM = holm(linhas.map((l) => l.pBM));
-const idxW = linhas.map((l, i) => i).filter((i) => Number.isFinite(linhas[i].pW));
-const hWlista = holm(idxW.map((j) => linhas[j].pW));
-const hW = new Map(idxW.map((i, k) => [i, hWlista[k]]));
-const saida = linhas.map((l, i) => [...l.ini, ...l.welch, exp(l.pBM), exp(hBM[i]), exp(hW.get(i)), ...l.robusto].join(","));
+// Familias do Holm: por par de APIs (Three.js, RAW), separando metricas primarias (confirmatorias) das exploratorias.
+// Primarias: desempenho (frame time), memoria (VRAM) e energia (J/frame e J em 60 s; este so e comparavel onde o FPS e igual).
+const PRIMARIAS = new Set(["frame_time_medio_ms", "vram_media_mb", "energia_por_frame_j", "consumo_acumulado_j"]);
+const familia = (l) => `${l.ini[0]}|${PRIMARIAS.has(l.ini[2]) ? "primaria" : "exploratoria"}`;
+function holmPorFamilia(valor) {
+  const aj = new Array(linhas.length).fill(NaN), grupos = new Map();
+  linhas.forEach((l, i) => { if (Number.isFinite(valor(l))) grupos.set(familia(l), [...(grupos.get(familia(l)) ?? []), i]); });
+  for (const idx of grupos.values()) holm(idx.map((i) => valor(linhas[i]))).forEach((a, k) => (aj[idx[k]] = a));
+  return aj;
+}
+const hBM = holmPorFamilia((l) => l.pBM), hW = holmPorFamilia((l) => l.pW);
+const saida = linhas.map((l, i) => [...l.ini, ...l.welch, exp(l.pBM), familia(l).split("|")[1], exp(hBM[i]), exp(hW[i]), ...l.robusto].join(","));
 const destino = "resultados/conclusões/dados-gerados/estatistica_comparacao.csv";
 mkdirSync(dirname(destino), { recursive: true });
 writeFileSync(destino, [cab, ...saida].join("\n"), "utf-8");

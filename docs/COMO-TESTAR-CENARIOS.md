@@ -148,13 +148,16 @@ Exemplos:
 
 - Não use o mouse/teclado durante os 60s do ensaio automatizado.
 - Feche abas e processos pesados em segundo plano antes de iniciar.
-- Repita cada combinação pelo menos 3 vezes e use a média — isolar outliers
+- Repita cada combinação várias vezes e use a média — isolar outliers
   de GC/JIT do navegador (ex: o pico isolado de 55ms visto no WebGPU-RAW A).
+  O dataset oficial tem 9 repetições por combinação (3 lotes de 3, ordem
+  sorteada em blocos por `npm run coletar`).
 - Aguarde a GPU "resfriar" entre ensaios consecutivos pesados (Cenário C
   principalmente) para não distorcer o Frame Time por *throttling* térmico.
-- Para a dimensão de Green IT, inicie a coleta do `nvidia-smi` (1 Hz) **antes**
+- Para a dimensão de Green IT, inicie a coleta do `nvidia-smi` **antes**
   de pressionar [SPACE], para sincronizar os timestamps de energia com os
-  do relatório de FPS/Frame Time.
+  do relatório de FPS/Frame Time. A coleta oficial (`npm run coletar`) já faz
+  isso a 10 Hz; o `power_monitor.sh` (1 Hz) é só o formato manual antigo.
 
 ---
 

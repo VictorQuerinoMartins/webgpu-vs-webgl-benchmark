@@ -464,6 +464,7 @@ function createPipelines(device, format) {
     fragment: { module: mod, entryPoint: "fs", targets: [{ format }] },
     primitive:    { topology: "triangle-list", cullMode },
     depthStencil: { format: "depth24plus", depthWriteEnabled: true, depthCompare: "less" },
+    multisample:  { count: MSAA_SAMPLES },
   });
 
   return {
@@ -487,9 +488,19 @@ function criarBindGroupOffset(device, offsetBGL, x, y, z) {
   });
 }
 
+// MSAA 4x, como o antialias:true dos demais modos.
+const MSAA_SAMPLES = 4;
+
 function makeDepth(device, w, h) {
   return device.createTexture({
-    size: [w, h], format: "depth24plus",
+    size: [w, h], format: "depth24plus", sampleCount: MSAA_SAMPLES,
+    usage: GPUTextureUsage.RENDER_ATTACHMENT,
+  });
+}
+
+function makeColorMsaa(device, w, h, format) {
+  return device.createTexture({
+    size: [w, h], format, sampleCount: MSAA_SAMPLES,
     usage: GPUTextureUsage.RENDER_ATTACHMENT,
   });
 }
@@ -717,6 +728,8 @@ async function main() {
 
   let depth = makeDepth(device, canvas.width, canvas.height);
   let depthView = depth.createView();
+  let colorMsaa = makeColorMsaa(device, canvas.width, canvas.height, format);
+  let colorMsaaView = colorMsaa.createView();
 
   window.addEventListener("resize", () => {
     canvas.width  = window.innerWidth;
@@ -724,6 +737,9 @@ async function main() {
     depth.destroy();
     depth = makeDepth(device, canvas.width, canvas.height);
     depthView = depth.createView();
+    colorMsaa.destroy();
+    colorMsaa = makeColorMsaa(device, canvas.width, canvas.height, format);
+    colorMsaaView = colorMsaa.createView();
   });
 
   let running    = false;
@@ -808,10 +824,11 @@ async function main() {
     const enc  = device.createCommandEncoder();
     const pass = enc.beginRenderPass({
       colorAttachments: [{
-        view:       context.getCurrentTexture().createView(),
-        clearValue: { r: 0.05, g: 0.05, b: 0.1, a: 1.0 },
-        loadOp:     "clear",
-        storeOp:    "store",
+        view:          colorMsaaView,
+        resolveTarget: context.getCurrentTexture().createView(),
+        clearValue:    { r: 0.05, g: 0.05, b: 0.1, a: 1.0 },
+        loadOp:        "clear",
+        storeOp:       "discard",
       }],
       depthStencilAttachment: {
         view:            depthView,
