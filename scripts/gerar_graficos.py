@@ -100,6 +100,7 @@ def carregar_runs():
                 "frames_por_watt": numero_apos(energia_txt, "Coeficiente de Eficiencia Medio (Frames por Watt): "),
                 "potencia_media_w": numero_apos(energia_txt, "Potencia Media (ponderada pelo tempo, janela de 60s): "),
                 "energia_por_frame_j": numero_apos(energia_txt, "Assinatura Energetica Media por Quadro (Joules/Frame): "),
+                "consumo_j": numero_apos(energia_txt, "Consumo Acumulado do Ensaio: "),
                 "draw_calls_medio": numero_apos(txt, "Draw Calls Medio: "),
                 "cpu_overhead_medio_ms": numero_apos(txt, "Overhead de CPU Medio (ms): "),
             }
@@ -271,6 +272,22 @@ def fig_framesporwatt(grupos):
     plt.close(fig)
 
 
+def fig_consumo_energetico(grupos):
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.8, 3.6), gridspec_kw={"width_ratios": [4, 3]})
+    grafico_barras_agrupadas(ax1, CENARIOS, CENARIO_LABEL, "consumo_j", grupos, "Energia em 60 s (J)", legend=False)
+    ax1.set_xlabel("Cenário (carga de textura)")
+    ax1.set_title("(a) Progressão de textura")
+    grafico_barras_agrupadas(ax2, DENSIDADES, DENSIDADE_LABEL, "consumo_j", grupos, "Energia em 60 s (J)", legend=False)
+    ax2.set_xlabel("Densidade de instâncias")
+    ax2.set_title("(b) Estresse de Draw Calls")
+    handles, labels = ax1.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=4, frameon=False)
+    fig.suptitle("Consumo energético da dGPU por ensaio (60 s)", y=1.14)
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / "fig_consumo_energetico.png")
+    plt.close(fig)
+
+
 # Paleta categorica Okabe-Ito (colorblind-safe), validada com scripts/validate_palette.js
 # do skill de dataviz -- hues bem distintos entre si em vez de degrade da mesma cor,
 # a pedido do autor do TCC (daltonico). "D" e "N=5000" compartilham o roxo-avermelhado
@@ -375,6 +392,7 @@ def main():
     fig_frametime_instancing(grupos)
     fig_vram_instancing(grupos)
     fig_framesporwatt(grupos)
+    fig_consumo_energetico(grupos)
     fig_dispersao_energia(grupos)
     print(f"Graficos escritos em: {OUT_DIR}")
 

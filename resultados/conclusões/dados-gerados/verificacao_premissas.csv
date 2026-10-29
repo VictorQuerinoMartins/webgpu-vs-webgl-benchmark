@@ -1,0 +1,141 @@
+par,cenario,metrica,tipo_dado,n,shapiro_p_webgl,shapiro_p_webgpu,razao_desvios,cv_menor,d_desvio_medio,d_desvio_combinado,magnitude,dif_pct,flags,recomendacao
+webgpu_vs_webgl,cenario_a,fps_medio,"taxa continua (media por ensaio), com teto de vsync",9/9,0.079,0.735,1.11,0.00101,-2.078,-2.078,grande,-0.22,,ok
+webgpu_vs_webgl,cenario_a,frame_time_medio_ms,"tempo continuo (media por ensaio), com piso de vsync",9/9,0.012,0.194,1.14,0.00133,2.014,2.014,grande,0.29,normalidade_rejeitada,priorizar_MannWhitney
+webgpu_vs_webgl,cenario_a,draw_calls_medio,"contagem (media por ensaio), pode ser constante",9/9,0.192,0.241,1.12,0.00160,-0.424,-0.424,pequeno,-0.07,,ok
+webgpu_vs_webgl,cenario_a,gpu_tempo_medio_ms,tempo continuo (media por ensaio),9/9,0.002,0.185,1.47,0.01507,3.643,3.643,grande,7.42,normalidade_rejeitada,priorizar_MannWhitney
+webgpu_vs_webgl,cenario_a,cpu_overhead_medio_ms,"derivada (frame time - GPU), pode ser negativa",9/9,0.001,0.411,1.57,0.01797,-3.351,-3.351,grande,-7.35,normalidade_rejeitada,priorizar_MannWhitney
+webgpu_vs_webgl,cenario_a,consumo_acumulado_j,energia continua (integral em 60 s),9/9,0.653,0.135,1.20,0.01552,3.719,3.719,grande,6.37,,ok
+webgpu_vs_webgl,cenario_a,potencia_media_w,potencia continua (media por ensaio),9/9,0.668,0.140,1.20,0.01548,3.735,3.735,grande,6.37,,ok
+webgpu_vs_webgl,cenario_a,energia_por_frame_j,razao continua (J/frame),9/9,0.450,0.101,1.15,0.01557,3.975,3.975,grande,6.68,,ok
+webgpu_vs_webgl,cenario_a,frames_por_watt,razao continua (frames/W),9/9,0.403,0.108,1.06,0.01543,-4.043,-4.043,grande,-6.42,,ok
+webgpu_vs_webgl,cenario_a,vram_media_mb,"memoria continua (nvidia-smi, GPU inteira)",9/9,0.000,0.002,1.04,0.11017,3.987,3.987,grande,75.93,normalidade_rejeitada,priorizar_MannWhitney
+webgpu_vs_webgl,cenario_b,fps_medio,"taxa continua (media por ensaio), com teto de vsync",9/9,0.538,0.207,1.55,0.00058,-2.191,-2.191,grande,-0.17,variancia_quase_nula,reportar_dif_absoluta_nao_d
+webgpu_vs_webgl,cenario_b,frame_time_medio_ms,"tempo continuo (media por ensaio), com piso de vsync",9/9,0.012,0.096,2.69,0.00086,6.380,6.380,grande,1.12,variancia_quase_nula|normalidade_rejeitada,reportar_dif_absoluta_nao_d
+webgpu_vs_webgl,cenario_b,draw_calls_medio,"contagem (media por ensaio), pode ser constante",9/9,0.121,0.159,3.28,0.00079,-5.489,-5.489,grande,-1.05,variancia_quase_nula|variancias_muito_diferentes,reportar_dif_absoluta_nao_d
+webgpu_vs_webgl,cenario_b,gpu_tempo_medio_ms,tempo continuo (media por ensaio),9/9,0.722,0.986,1.93,0.00278,40.966,40.966,grande,21.19,,ok
+webgpu_vs_webgl,cenario_b,cpu_overhead_medio_ms,"derivada (frame time - GPU), pode ser negativa",9/9,0.622,0.501,2.84,0.00466,-40.360,-40.360,grande,-28.60,,ok
+webgpu_vs_webgl,cenario_b,consumo_acumulado_j,energia continua (integral em 60 s),9/9,0.157,0.090,1.66,0.00874,4.142,4.142,grande,4.96,,ok
+webgpu_vs_webgl,cenario_b,potencia_media_w,potencia continua (media por ensaio),9/9,0.169,0.092,1.66,0.00880,4.119,4.119,grande,4.96,,ok
+webgpu_vs_webgl,cenario_b,energia_por_frame_j,razao continua (J/frame),9/9,0.137,0.022,1.64,0.00901,5.018,5.018,grande,6.14,normalidade_rejeitada,priorizar_MannWhitney
+webgpu_vs_webgl,cenario_b,frames_por_watt,razao continua (frames/W),9/9,0.036,0.022,1.70,0.00862,-4.386,-4.386,grande,-5.27,normalidade_rejeitada,priorizar_MannWhitney
+webgpu_vs_webgl,cenario_b,vram_media_mb,"memoria continua (nvidia-smi, GPU inteira)",9/9,0.000,0.000,1.02,0.07865,4.605,4.605,grande,57.55,normalidade_rejeitada,priorizar_MannWhitney
+webgpu_vs_webgl,cenario_c,fps_medio,"taxa continua (media por ensaio), com teto de vsync",9/9,0.359,0.270,1.29,0.00058,-1.923,-1.923,grande,-0.13,variancia_quase_nula,reportar_dif_absoluta_nao_d
+webgpu_vs_webgl,cenario_c,frame_time_medio_ms,"tempo continuo (media por ensaio), com piso de vsync",9/9,0.024,0.248,1.60,0.00102,9.310,9.310,grande,1.26,normalidade_rejeitada,priorizar_MannWhitney
+webgpu_vs_webgl,cenario_c,draw_calls_medio,"contagem (media por ensaio), pode ser constante",9/9,0.513,0.825,1.58,0.00102,-8.885,-8.885,grande,-1.20,,ok
+webgpu_vs_webgl,cenario_c,gpu_tempo_medio_ms,tempo continuo (media por ensaio),9/9,0.785,0.366,1.45,0.01083,9.685,9.685,grande,14.99,,ok
+webgpu_vs_webgl,cenario_c,cpu_overhead_medio_ms,"derivada (frame time - GPU), pode ser negativa",9/9,0.785,0.072,1.42,0.02748,-8.244,-8.244,grande,-21.74,,ok
+webgpu_vs_webgl,cenario_c,consumo_acumulado_j,energia continua (integral em 60 s),9/9,0.467,0.759,1.88,0.00726,3.104,3.104,grande,3.51,,ok
+webgpu_vs_webgl,cenario_c,potencia_media_w,potencia continua (media por ensaio),9/9,0.492,0.785,1.86,0.00732,3.105,3.105,grande,3.52,,ok
+webgpu_vs_webgl,cenario_c,energia_por_frame_j,razao continua (J/frame),9/9,0.523,0.557,1.88,0.00726,4.256,4.256,grande,4.89,,ok
+webgpu_vs_webgl,cenario_c,frames_por_watt,razao continua (frames/W),9/9,0.532,0.529,1.71,0.00848,-3.610,-3.610,grande,-4.12,,ok
+webgpu_vs_webgl,cenario_c,vram_media_mb,"memoria continua (nvidia-smi, GPU inteira)",9/9,0.000,0.000,1.19,0.04105,3.623,3.623,grande,19.56,normalidade_rejeitada,priorizar_MannWhitney
+webgpu_vs_webgl,cenario_d,fps_medio,"taxa continua (media por ensaio), com teto de vsync",9/9,0.570,0.378,1.20,0.03119,-5.822,-5.822,grande,-16.73,,ok
+webgpu_vs_webgl,cenario_d,frame_time_medio_ms,"tempo continuo (media por ensaio), com piso de vsync",9/9,0.442,0.195,6.82,0.04632,7.990,7.990,grande,180.49,variancias_muito_diferentes,ok
+webgpu_vs_webgl,cenario_d,draw_calls_medio,"contagem (media por ensaio), pode ser constante",9/9,0.384,0.133,1.40,0.03327,-16.314,-16.314,grande,-47.22,,ok
+webgpu_vs_webgl,cenario_d,gpu_tempo_medio_ms,tempo continuo (media por ensaio),9/9,0.406,0.264,4.22,0.07746,6.687,6.687,grande,158.85,variancias_muito_diferentes,ok
+webgpu_vs_webgl,cenario_d,cpu_overhead_medio_ms,"derivada (frame time - GPU), pode ser negativa",9/9,0.009,0.151,6.28,0.09830,5.439,5.439,grande,240.49,normalidade_rejeitada|variancias_muito_diferentes,priorizar_MannWhitney
+webgpu_vs_webgl,cenario_d,consumo_acumulado_j,energia continua (integral em 60 s),9/9,0.230,0.255,2.40,0.04112,-3.495,-3.495,grande,-26.47,,ok
+webgpu_vs_webgl,cenario_d,potencia_media_w,potencia continua (media por ensaio),9/9,0.229,0.253,2.40,0.04112,-3.495,-3.495,grande,-26.47,,ok
+webgpu_vs_webgl,cenario_d,energia_por_frame_j,razao continua (J/frame),9/9,0.086,0.053,3.73,0.06174,6.177,6.177,grande,104.14,variancias_muito_diferentes,ok
+webgpu_vs_webgl,cenario_d,frames_por_watt,razao continua (frames/W),9/9,0.149,0.747,1.09,0.03843,-3.681,-3.681,grande,-13.59,,ok
+webgpu_vs_webgl,cenario_d,vram_media_mb,"memoria continua (nvidia-smi, GPU inteira)",9/9,0.666,0.750,1.12,0.00678,-1.106,-1.106,grande,-0.79,,ok
+webgpu_vs_webgl,instancing_n2000,fps_medio,"taxa continua (media por ensaio), com teto de vsync",9/9,0.708,0.024,12.02,0.03294,6.821,6.821,grande,191.63,normalidade_rejeitada|variancias_muito_diferentes,priorizar_MannWhitney
+webgpu_vs_webgl,instancing_n2000,frame_time_medio_ms,"tempo continuo (media por ensaio), com piso de vsync",9/9,0.614,0.012,1.95,0.03259,-12.545,-12.545,grande,-63.24,normalidade_rejeitada,priorizar_MannWhitney
+webgpu_vs_webgl,instancing_n2000,draw_calls_medio,"contagem (media por ensaio), pode ser constante",9/9,0.409,0.052,9.15,0.00005,2.073,2.073,grande,0.06,variancia_quase_nula|variancias_muito_diferentes,reportar_dif_absoluta_nao_d
+webgpu_vs_webgl,instancing_n2000,gpu_tempo_medio_ms,tempo continuo (media por ensaio),9/9,0.621,0.011,2.01,0.03225,-12.144,-12.144,grande,-62.21,normalidade_rejeitada,priorizar_MannWhitney
+webgpu_vs_webgl,instancing_n2000,cpu_overhead_medio_ms,"derivada (frame time - GPU), pode ser negativa",9/9,0.611,0.042,1.06,0.03979,-19.440,-19.440,grande,-79.54,normalidade_rejeitada,priorizar_MannWhitney
+webgpu_vs_webgl,instancing_n2000,consumo_acumulado_j,energia continua (integral em 60 s),9/9,0.833,0.022,4.74,0.03196,7.390,7.390,grande,80.96,normalidade_rejeitada|variancias_muito_diferentes,priorizar_MannWhitney
+webgpu_vs_webgl,instancing_n2000,potencia_media_w,potencia continua (media por ensaio),9/9,0.825,0.022,4.75,0.03194,7.389,7.389,grande,80.96,normalidade_rejeitada|variancias_muito_diferentes,priorizar_MannWhitney
+webgpu_vs_webgl,instancing_n2000,energia_por_frame_j,razao continua (J/frame),9/9,0.953,0.018,4.41,0.01158,-9.297,-9.297,grande,-34.42,normalidade_rejeitada|variancias_muito_diferentes,priorizar_MannWhitney
+webgpu_vs_webgl,instancing_n2000,frames_por_watt,razao continua (frames/W),9/9,nan,0.060,nan,0.00000,9.671,9.671,grande,58.20,variancia_quase_nula,reportar_dif_absoluta_nao_d
+webgpu_vs_webgl,instancing_n2000,vram_media_mb,"memoria continua (nvidia-smi, GPU inteira)",9/9,0.000,0.001,1.04,0.07309,9.098,9.098,grande,211.29,normalidade_rejeitada,priorizar_MannWhitney
+webgpu_vs_webgl,instancing_n500,fps_medio,"taxa continua (media por ensaio), com teto de vsync",9/9,0.003,0.961,3.27,0.10188,5.355,5.355,grande,131.79,normalidade_rejeitada|variancias_muito_diferentes,priorizar_MannWhitney
+webgpu_vs_webgl,instancing_n500,frame_time_medio_ms,"tempo continuo (media por ensaio), com piso de vsync",9/9,0.019,0.923,1.14,0.08747,-6.500,-6.500,grande,-53.52,normalidade_rejeitada,priorizar_MannWhitney
+webgpu_vs_webgl,instancing_n500,draw_calls_medio,"contagem (media por ensaio), pode ser constante",9/9,0.106,0.980,7.06,0.00006,9.787,9.787,grande,0.32,variancia_quase_nula|variancias_muito_diferentes,reportar_dif_absoluta_nao_d
+webgpu_vs_webgl,instancing_n500,gpu_tempo_medio_ms,tempo continuo (media por ensaio),9/9,0.023,0.901,1.00,0.08169,-6.197,-6.197,grande,-50.62,normalidade_rejeitada,priorizar_MannWhitney
+webgpu_vs_webgl,instancing_n500,cpu_overhead_medio_ms,"derivada (frame time - GPU), pode ser negativa",9/9,0.004,0.014,5.45,0.16028,-7.761,-7.761,grande,-89.43,normalidade_rejeitada|variancias_muito_diferentes,priorizar_MannWhitney
+webgpu_vs_webgl,instancing_n500,consumo_acumulado_j,energia continua (integral em 60 s),9/9,0.240,0.925,3.79,0.04581,5.251,5.251,grande,66.70,variancias_muito_diferentes,ok
+webgpu_vs_webgl,instancing_n500,potencia_media_w,potencia continua (media por ensaio),9/9,0.245,0.925,3.79,0.04580,5.253,5.253,grande,66.70,variancias_muito_diferentes,ok
+webgpu_vs_webgl,instancing_n500,energia_por_frame_j,razao continua (J/frame),9/9,0.000,0.532,1.02,0.05028,-4.691,-4.691,grande,-23.40,normalidade_rejeitada,priorizar_MannWhitney
+webgpu_vs_webgl,instancing_n500,frames_por_watt,razao continua (frames/W),9/9,0.000,0.544,1.16,0.04933,5.696,5.696,grande,35.59,normalidade_rejeitada,priorizar_MannWhitney
+webgpu_vs_webgl,instancing_n500,vram_media_mb,"memoria continua (nvidia-smi, GPU inteira)",9/9,0.000,0.000,1.04,0.13606,2.989,2.989,grande,71.08,normalidade_rejeitada,priorizar_MannWhitney
+webgpu_vs_webgl,instancing_n5000,fps_medio,"taxa continua (media por ensaio), com teto de vsync",9/9,0.893,0.643,6.97,0.04534,11.403,11.403,grande,257.36,variancias_muito_diferentes,ok
+webgpu_vs_webgl,instancing_n5000,frame_time_medio_ms,"tempo continuo (media por ensaio), com piso de vsync",9/9,0.860,0.670,1.58,0.04634,-17.906,-17.906,grande,-69.48,,ok
+webgpu_vs_webgl,instancing_n5000,draw_calls_medio,"contagem (media por ensaio), pode ser constante",9/9,0.860,0.210,2.41,0.00004,-4.731,-4.731,grande,-0.03,variancia_quase_nula,reportar_dif_absoluta_nao_d
+webgpu_vs_webgl,instancing_n5000,gpu_tempo_medio_ms,tempo continuo (media por ensaio),9/9,0.828,0.561,1.76,0.04642,-18.686,-18.686,grande,-70.54,,ok
+webgpu_vs_webgl,instancing_n5000,cpu_overhead_medio_ms,"derivada (frame time - GPU), pode ser negativa",9/9,0.747,0.386,2.02,0.04976,-6.175,-6.175,grande,-49.04,,ok
+webgpu_vs_webgl,instancing_n5000,consumo_acumulado_j,energia continua (integral em 60 s),9/9,0.487,0.056,5.80,0.03695,6.227,6.227,grande,95.78,variancias_muito_diferentes,ok
+webgpu_vs_webgl,instancing_n5000,potencia_media_w,potencia continua (media por ensaio),9/9,0.487,0.056,5.79,0.03700,6.226,6.226,grande,95.78,variancias_muito_diferentes,ok
+webgpu_vs_webgl,instancing_n5000,energia_por_frame_j,razao continua (J/frame),9/9,0.422,0.003,1.10,0.01438,-27.087,-27.087,grande,-41.03,normalidade_rejeitada,priorizar_MannWhitney
+webgpu_vs_webgl,instancing_n5000,frames_por_watt,razao continua (frames/W),9/9,nan,0.000,nan,0.00000,18.856,18.856,grande,74.07,variancia_quase_nula|normalidade_rejeitada,reportar_dif_absoluta_nao_d
+webgpu_vs_webgl,instancing_n5000,vram_media_mb,"memoria continua (nvidia-smi, GPU inteira)",9/9,0.000,0.000,1.09,0.03681,21.661,21.661,grande,496.23,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,cenario_a,fps_medio,"taxa continua (media por ensaio), com teto de vsync",9/9,0.006,0.163,1.10,0.00015,-0.439,-0.439,pequeno,-0.01,variancia_quase_nula|normalidade_rejeitada,reportar_dif_absoluta_nao_d
+webgpu-raw_vs_webgl-raw,cenario_a,frame_time_medio_ms,"tempo continuo (media por ensaio), com piso de vsync",9/9,nan,0.000,nan,0.00000,0.471,0.471,pequeno,0.02,variancia_quase_nula|normalidade_rejeitada,reportar_dif_absoluta_nao_d
+webgpu-raw_vs_webgl-raw,cenario_a,draw_calls_medio,"contagem (media por ensaio), pode ser constante",9/9,nan,nan,nan,0.00000,nan,nan,,0.00,sem_variancia,nao_testar
+webgpu-raw_vs_webgl-raw,cenario_a,gpu_tempo_medio_ms,tempo continuo (media por ensaio),9/9,0.009,0.081,19.37,0.00050,-69.919,-69.919,grande,-32.25,variancia_quase_nula|normalidade_rejeitada|variancias_muito_diferentes,reportar_dif_absoluta_nao_d
+webgpu-raw_vs_webgl-raw,cenario_a,cpu_overhead_medio_ms,"derivada (frame time - GPU), pode ser negativa",9/9,0.011,0.618,13.71,0.00029,69.781,69.781,grande,24.16,variancia_quase_nula|normalidade_rejeitada|variancias_muito_diferentes,reportar_dif_absoluta_nao_d
+webgpu-raw_vs_webgl-raw,cenario_a,consumo_acumulado_j,energia continua (integral em 60 s),9/9,0.006,0.035,1.97,0.02243,-2.035,-2.035,grande,-6.67,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,cenario_a,potencia_media_w,potencia continua (media por ensaio),9/9,0.007,0.035,1.97,0.02238,-2.036,-2.036,grande,-6.66,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,cenario_a,energia_por_frame_j,razao continua (J/frame),9/9,0.007,0.035,1.97,0.02246,-2.042,-2.042,grande,-6.69,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,cenario_a,frames_por_watt,razao continua (frames/W),9/9,0.004,0.033,1.81,0.02238,1.966,1.966,grande,6.87,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,cenario_a,vram_media_mb,"memoria continua (nvidia-smi, GPU inteira)",9/9,0.017,0.001,1.20,0.13524,1.501,1.501,grande,28.88,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,cenario_b,fps_medio,"taxa continua (media por ensaio), com teto de vsync",9/9,0.581,0.687,1.02,0.00016,-0.288,-0.288,pequeno,-0.00,variancia_quase_nula,reportar_dif_absoluta_nao_d
+webgpu-raw_vs_webgl-raw,cenario_b,frame_time_medio_ms,"tempo continuo (media por ensaio), com piso de vsync",9/9,nan,nan,nan,0.00000,nan,nan,,0.00,sem_variancia,nao_testar
+webgpu-raw_vs_webgl-raw,cenario_b,draw_calls_medio,"contagem (media por ensaio), pode ser constante",9/9,nan,nan,nan,0.00000,nan,nan,,0.00,sem_variancia,nao_testar
+webgpu-raw_vs_webgl-raw,cenario_b,gpu_tempo_medio_ms,tempo continuo (media por ensaio),9/9,0.225,0.000,1.58,0.04065,-6.609,-6.609,grande,-35.52,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,cenario_b,cpu_overhead_medio_ms,"derivada (frame time - GPU), pode ser negativa",9/9,0.224,0.000,1.57,0.03936,6.624,6.624,grande,34.32,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,cenario_b,consumo_acumulado_j,energia continua (integral em 60 s),9/9,0.629,0.922,1.33,0.01295,-5.314,-5.314,grande,-8.08,,ok
+webgpu-raw_vs_webgl-raw,cenario_b,potencia_media_w,potencia continua (media por ensaio),9/9,0.646,0.915,1.33,0.01289,-5.320,-5.320,grande,-8.07,,ok
+webgpu-raw_vs_webgl-raw,cenario_b,energia_por_frame_j,razao continua (J/frame),9/9,0.668,0.899,1.31,0.01306,-5.285,-5.285,grande,-8.03,,ok
+webgpu-raw_vs_webgl-raw,cenario_b,frames_por_watt,razao continua (frames/W),9/9,0.692,0.877,1.51,0.01331,5.055,5.055,grande,8.64,,ok
+webgpu-raw_vs_webgl-raw,cenario_b,vram_media_mb,"memoria continua (nvidia-smi, GPU inteira)",9/9,0.000,0.000,1.10,0.09963,2.640,2.640,grande,38.13,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,cenario_c,fps_medio,"taxa continua (media por ensaio), com teto de vsync",9/9,0.879,0.010,1.43,0.00011,-1.263,-1.263,grande,-0.02,variancia_quase_nula|normalidade_rejeitada,reportar_dif_absoluta_nao_d
+webgpu-raw_vs_webgl-raw,cenario_c,frame_time_medio_ms,"tempo continuo (media por ensaio), com piso de vsync",9/9,0.000,0.000,1.50,0.00048,1.307,1.307,grande,0.08,variancia_quase_nula|normalidade_rejeitada,reportar_dif_absoluta_nao_d
+webgpu-raw_vs_webgl-raw,cenario_c,draw_calls_medio,"contagem (media por ensaio), pode ser constante",9/9,nan,nan,nan,0.00000,nan,nan,,0.00,sem_variancia,nao_testar
+webgpu-raw_vs_webgl-raw,cenario_c,gpu_tempo_medio_ms,tempo continuo (media por ensaio),9/9,0.026,0.000,1.31,0.04190,-7.854,-7.854,grande,-38.34,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,cenario_c,cpu_overhead_medio_ms,"derivada (frame time - GPU), pode ser negativa",9/9,0.022,0.000,1.32,0.04037,7.879,7.879,grande,39.38,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,cenario_c,consumo_acumulado_j,energia continua (integral em 60 s),9/9,0.375,0.623,1.07,0.01541,-5.621,-5.621,grande,-8.38,,ok
+webgpu-raw_vs_webgl-raw,cenario_c,potencia_media_w,potencia continua (media por ensaio),9/9,0.374,0.629,1.08,0.01549,-5.610,-5.610,grande,-8.37,,ok
+webgpu-raw_vs_webgl-raw,cenario_c,energia_por_frame_j,razao continua (J/frame),9/9,0.435,0.612,1.06,0.01545,-5.523,-5.523,grande,-8.31,,ok
+webgpu-raw_vs_webgl-raw,cenario_c,frames_por_watt,razao continua (frames/W),9/9,0.447,0.584,1.15,0.01558,5.381,5.381,grande,9.02,,ok
+webgpu-raw_vs_webgl-raw,cenario_c,vram_media_mb,"memoria continua (nvidia-smi, GPU inteira)",9/9,0.000,0.000,1.00,0.07242,2.049,2.049,grande,17.43,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,cenario_d,fps_medio,"taxa continua (media por ensaio), com teto de vsync",9/9,0.497,0.330,1.17,0.00018,1.314,1.314,grande,0.03,variancia_quase_nula,reportar_dif_absoluta_nao_d
+webgpu-raw_vs_webgl-raw,cenario_d,frame_time_medio_ms,"tempo continuo (media por ensaio), com piso de vsync",9/9,0.188,0.099,1.36,0.00258,-0.775,-0.775,medio,-0.24,,ok
+webgpu-raw_vs_webgl-raw,cenario_d,draw_calls_medio,"contagem (media por ensaio), pode ser constante",9/9,nan,nan,nan,0.00000,nan,nan,,0.00,sem_variancia,nao_testar
+webgpu-raw_vs_webgl-raw,cenario_d,gpu_tempo_medio_ms,tempo continuo (media por ensaio),9/9,0.450,0.014,2.12,0.02569,-7.633,-7.633,grande,-32.45,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,cenario_d,cpu_overhead_medio_ms,"derivada (frame time - GPU), pode ser negativa",9/9,0.400,0.023,2.01,0.02983,7.677,7.677,grande,36.35,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,cenario_d,consumo_acumulado_j,energia continua (integral em 60 s),9/9,0.005,0.332,2.81,0.01412,-2.371,-2.371,grande,-6.59,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,cenario_d,potencia_media_w,potencia continua (media por ensaio),9/9,0.005,0.335,2.80,0.01417,-2.368,-2.368,grande,-6.60,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,cenario_d,energia_por_frame_j,razao continua (J/frame),9/9,0.004,0.327,2.74,0.01440,-2.451,-2.451,grande,-6.79,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,cenario_d,frames_por_watt,razao continua (frames/W),9/9,0.003,0.322,2.49,0.01448,2.349,2.349,grande,6.90,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,cenario_d,vram_media_mb,"memoria continua (nvidia-smi, GPU inteira)",9/9,0.003,0.001,1.05,0.03000,1.722,1.722,grande,5.59,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,instancing_n2000,fps_medio,"taxa continua (media por ensaio), com teto de vsync",9/9,0.007,0.761,1.14,0.12036,1.431,1.431,grande,19.29,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,instancing_n2000,frame_time_medio_ms,"tempo continuo (media por ensaio), com piso de vsync",9/9,0.040,0.931,1.10,0.10431,-1.656,-1.656,grande,-16.50,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,instancing_n2000,draw_calls_medio,"contagem (media por ensaio), pode ser constante",9/9,nan,nan,nan,0.00000,nan,nan,,0.00,sem_variancia,nao_testar
+webgpu-raw_vs_webgl-raw,instancing_n2000,gpu_tempo_medio_ms,tempo continuo (media por ensaio),9/9,0.039,0.930,1.10,0.10451,-1.634,-1.634,grande,-16.31,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,instancing_n2000,cpu_overhead_medio_ms,"derivada (frame time - GPU), pode ser negativa",9/9,0.469,0.441,2.58,0.14474,-5.033,-5.033,grande,-58.77,,ok
+webgpu-raw_vs_webgl-raw,instancing_n2000,consumo_acumulado_j,energia continua (integral em 60 s),9/9,0.001,0.229,1.15,0.17045,0.175,0.175,desprezivel,3.32,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,instancing_n2000,potencia_media_w,potencia continua (media por ensaio),9/9,0.001,0.229,1.15,0.17044,0.175,0.175,desprezivel,3.32,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,instancing_n2000,energia_por_frame_j,razao continua (J/frame),9/9,0.000,0.005,1.52,0.05017,-2.433,-2.433,grande,-13.56,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,instancing_n2000,frames_por_watt,razao continua (frames/W),9/9,0.000,0.015,1.05,0.04756,2.452,2.452,grande,13.58,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,instancing_n2000,vram_media_mb,"memoria continua (nvidia-smi, GPU inteira)",9/9,0.003,0.000,1.03,0.18693,0.877,0.877,grande,20.00,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,instancing_n500,fps_medio,"taxa continua (media por ensaio), com teto de vsync",9/9,0.831,0.319,1.47,0.04409,1.207,1.207,grande,6.69,,ok
+webgpu-raw_vs_webgl-raw,instancing_n500,frame_time_medio_ms,"tempo continuo (media por ensaio), com piso de vsync",9/9,0.825,0.314,1.41,0.04455,-1.233,-1.233,grande,-6.72,,ok
+webgpu-raw_vs_webgl-raw,instancing_n500,draw_calls_medio,"contagem (media por ensaio), pode ser constante",9/9,nan,nan,nan,0.00000,nan,nan,,0.00,sem_variancia,nao_testar
+webgpu-raw_vs_webgl-raw,instancing_n500,gpu_tempo_medio_ms,tempo continuo (media por ensaio),9/9,0.854,0.304,1.42,0.04475,-1.067,-1.067,grande,-5.87,,ok
+webgpu-raw_vs_webgl-raw,instancing_n500,cpu_overhead_medio_ms,"derivada (frame time - GPU), pode ser negativa",9/9,0.904,0.480,1.96,0.03645,-17.858,-17.858,grande,-51.69,,ok
+webgpu-raw_vs_webgl-raw,instancing_n500,consumo_acumulado_j,energia continua (integral em 60 s),9/9,0.798,0.594,1.55,0.05093,-0.310,-0.310,pequeno,-2.07,,ok
+webgpu-raw_vs_webgl-raw,instancing_n500,potencia_media_w,potencia continua (media por ensaio),9/9,0.800,0.597,1.56,0.05087,-0.310,-0.310,pequeno,-2.06,,ok
+webgpu-raw_vs_webgl-raw,instancing_n500,energia_por_frame_j,razao continua (J/frame),9/9,0.224,0.415,1.56,0.01028,-6.623,-6.623,grande,-8.92,,ok
+webgpu-raw_vs_webgl-raw,instancing_n500,frames_por_watt,razao continua (frames/W),9/9,0.165,0.571,2.12,0.01179,4.564,4.564,grande,8.91,,ok
+webgpu-raw_vs_webgl-raw,instancing_n500,vram_media_mb,"memoria continua (nvidia-smi, GPU inteira)",9/9,0.000,0.001,1.02,0.22466,0.083,0.083,desprezivel,1.89,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,instancing_n5000,fps_medio,"taxa continua (media por ensaio), com teto de vsync",9/9,0.096,0.631,1.98,0.06941,2.251,2.251,grande,24.46,,ok
+webgpu-raw_vs_webgl-raw,instancing_n5000,frame_time_medio_ms,"tempo continuo (media por ensaio), com piso de vsync",9/9,0.032,0.472,1.33,0.06639,-2.631,-2.631,grande,-20.50,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,instancing_n5000,draw_calls_medio,"contagem (media por ensaio), pode ser constante",9/9,nan,nan,nan,0.00000,nan,nan,,0.00,sem_variancia,nao_testar
+webgpu-raw_vs_webgl-raw,instancing_n5000,gpu_tempo_medio_ms,tempo continuo (media por ensaio),9/9,0.031,0.469,1.34,0.06566,-2.662,-2.662,grande,-20.67,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,instancing_n5000,cpu_overhead_medio_ms,"derivada (frame time - GPU), pode ser negativa",9/9,0.002,0.076,3.54,0.94763,1.171,1.171,grande,-81.56,normalidade_rejeitada|valor_negativo|variancias_muito_diferentes,nao_interpretar
+webgpu-raw_vs_webgl-raw,instancing_n5000,consumo_acumulado_j,energia continua (integral em 60 s),9/9,0.030,0.534,2.13,0.08108,0.901,0.901,grande,12.16,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,instancing_n5000,potencia_media_w,potencia continua (media por ensaio),9/9,0.030,0.535,2.13,0.08109,0.901,0.901,grande,12.16,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,instancing_n5000,energia_por_frame_j,razao continua (J/frame),9/9,0.048,0.180,2.20,0.01804,-3.819,-3.819,grande,-11.76,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,instancing_n5000,frames_por_watt,razao continua (frames/W),9/9,0.003,0.159,1.36,0.03571,1.765,1.765,grande,7.54,normalidade_rejeitada,priorizar_MannWhitney
+webgpu-raw_vs_webgl-raw,instancing_n5000,vram_media_mb,"memoria continua (nvidia-smi, GPU inteira)",9/9,0.000,0.005,1.08,0.13824,3.201,3.201,grande,74.26,normalidade_rejeitada,priorizar_MannWhitney

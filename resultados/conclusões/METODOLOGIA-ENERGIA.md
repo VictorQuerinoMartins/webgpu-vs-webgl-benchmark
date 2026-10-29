@@ -13,43 +13,52 @@ A API JavaScript não expõe nenhum mecanismo para leitura de potência de
 GPU — não há `navigator.gpu.power` ou equivalente. Toda medição de energia
 neste estudo é, portanto, **externa ao processo do navegador**: um
 utilitário de linha de comando (`nvidia-smi`) amostra a potência
-instantânea da GPU dedicada (NVIDIA GeForce RTX 3050 Laptop) a 1 Hz,
+instantânea da GPU dedicada (NVIDIA GeForce RTX 3050 Laptop) a 10 Hz,
 independentemente da aplicação sob teste, e o resultado é correlacionado
 *a posteriori* com os dados de desempenho (FPS, Frame Time) coletados pela
-aplicação em `src/main.js`.
+aplicação em `src/main.js`. O valor vem da leitura do sensor de potência da
+placa exposta pelo driver, e não de um modelo de estimativa.
 
 Essa separação entre *sonda de energia* (processo externo) e *software sob
-teste* (aplicação WebGL/WebGPU) segue o mesmo princípio metodológico geral
-adotado por estudos de eficiência energética de software, entre eles
-Feitosa et al. (2017) — *"Investigating the effect of design patterns on
-energy consumption"*: a energia é capturada por instrumentação de hardware
-ou driver externa à aplicação, e associada ao comportamento do software por
-meio de **sincronização temporal** (timestamps), e não por estimativas
-indiretas via contagem de instruções de CPU ou modelos analíticos de
-consumo.
+teste* (aplicação WebGL/WebGPU) é comum em estudos de eficiência energética
+de software. Feitosa et al. (2017) — *"Investigating the effect of design
+patterns on energy consumption"* — também comparam duas implementações
+funcionalmente equivalentes (com e sem padrão de projeto) pelo consumo em
+joules, medido por ferramentas externas à aplicação. **A instrumentação,
+porém, é diferente:** eles usam estimadores de software (PowerAPI, Jalen e
+pTop, baseados no TDP da CPU, só CPU, em Linux), escolhidos
+deliberadamente em vez de medidor de hardware para obter granularidade por
+método. Este trabalho lê o sensor da dGPU diretamente, em Windows. O
+paralelo com Feitosa et al. vale para o **desenho comparativo**
+(alternativas equivalentes, energia em joules, ferramenta externa, limite
+de escopo declarado) e para a **análise** (Shapiro-Wilk, seguido de testes
+não paramétricos quando a normalidade é rejeitada), e não para o método de
+captura da energia.
 
-> ⚠️ Nota para quem for citar Feitosa et al. (2017) na monografia: a
-> caracterização acima descreve o *tipo* de abordagem (instrumentação
-> externa correlacionada por tempo), comum na literatura de Green IT/Green
-> Software. Antes de atribuir detalhes específicos da metodologia deles
-> (ferramenta exata, granularidade de amostragem, hardware de medição) ao
-> texto do TCC, confirme na seção de Metodologia do artigo original — o
-> texto aqui não deve ser tratado como citação literal do procedimento
-> exato empregado pelos autores.
+> ⚠️ Não atribuir a Feitosa et al. (2017) a medição por hardware nem a
+> sincronização por timestamps com amostragem de potência: o artigo usa
+> estimativa por software, só da CPU. O desenho deles é pareado (o mesmo
+> método nas duas versões), o que não é o caso aqui (WebGL e WebGPU são
+> execuções independentes).
 
 ---
 
 ## 2. Sincronização temporal entre software e sonda de energia
 
-O `nvidia-smi` produz um log de potência em coordenadas de **tempo Unix
-absoluto** (`scripts/power_monitor.sh`, amostragem a cada 1s):
+O `nvidia-smi` produz um log em coordenadas de **tempo Unix absoluto, em
+milissegundos**. O amostrador oficial (`scripts/automatizar_coleta.mjs`,
+`nvidia-smi --loop-ms=100`) usa o timestamp do próprio `nvidia-smi`, o que
+evita o jitter de agendar a leitura pelo Node:
 
 ```
-timestamp,watts
-1735900000,42.3
-1735900001,44.1
+timestamp,watts,vram_mb,temp_c,clock_mhz,throttle_sw,throttle_hw
+1735900000100,42.3,812,71,1425,Not Active,Not Active
+1735900000200,44.1,812,71,1425,Not Active,Not Active
 ...
 ```
+
+(O `scripts/power_monitor.sh`, a 1 Hz e com epoch em segundos, é o formato
+antigo, para uso manual; `analisar_energia.mjs` aceita os dois.)
 
 A aplicação (`src/main.js`, `src/main-raw-webgl.js`,
 `src/main-raw-webgpu.js`), por outro lado, registra o desempenho em
@@ -77,8 +86,9 @@ em vigor no instante exato em que aquele quadro foi renderizado.
 
 ## 3. Interpolação de potência
 
-A taxa de amostragem do `nvidia-smi` (1 Hz) é muito mais grosseira que a
-taxa de quadros da aplicação (dezenas a centenas de Hz). Em vez de atribuir
+A taxa de amostragem do `nvidia-smi` (10 Hz, `--loop-ms=100`) é mais
+grosseira que a taxa de quadros da aplicação (dezenas a centenas de Hz).
+Em vez de atribuir
 a cada quadro apenas a amostra de potência mais próxima (*nearest
 neighbor*, que introduziria descontinuidades artificiais na série), o
 script `scripts/analisar_energia.mjs` aplica **interpolação linear** entre
@@ -124,24 +134,36 @@ como soma das energias por quadro, por dois motivos:
   todo (CPU, RAM, tela, iGPU). A métrica reflete o custo energético do
   *hardware alvo do estresse gráfico*, não o TCO energético completo da
   máquina.
-- **Resolução temporal:** amostragem a 1 Hz é uma limitação de hardware do
-  driver NVIDIA em modo usuário (não há API pública de maior frequência
-  sem ferramentas adicionais de profiling). A interpolação linear suaviza,
-  mas não reconstrói, variações de potência mais rápidas que 1s.
+- **Resolução temporal:** a amostragem é de 10 Hz (`nvidia-smi
+  --loop-ms=100`). A interpolação linear suaviza, mas não reconstrói,
+  variações de potência mais rápidas que 100 ms.
+- **Potência em repouso incluída:** o `power.draw` é da dGPU inteira, com o
+  piso de potência de repouso. Os `baseline_*.txt` em `resultados/power_logs/`
+  permitem descontá-lo, se necessário.
+- **CPU fora do escopo:** o custo de submissão de comandos (o ganho esperado
+  do WebGPU) ocorre também na CPU, que não é medida. A energia da CPU
+  (ex.: RAPL) seria um complemento, não um substituto.
 - **Sincronização por software:** o timestamp de início depende do
   relógio do sistema operacional (`Date.now()`) e do agendamento do
   processo do `nvidia-smi`; jitter de alguns milissegundos é esperado e
-  irrelevante frente à janela de 60s e à resolução de 1 Hz da sonda.
-- **Repetição:** conforme a seção 8 de `COMO-TESTAR-CENARIOS.md`, cada
-  combinação API×Cenário deve ser repetida (mínimo 3 execuções) e a média
-  reportada, para mitigar ruído de *thermal throttling* e variações do
-  agendador do SO.
+  irrelevante frente à janela de 60s e à resolução de 100 ms da sonda.
+- **Repetição:** cada combinação API×Cenário foi executada 9 vezes (3 lotes
+  de 3 repetições, com a ordem sorteada em blocos), e os resultados são
+  analisados estatisticamente (ver `docs/pesquisa/referencias-estatistica.md`
+  e `scripts/analise_estatistica.mjs`), para mitigar ruído de *thermal
+  throttling* e variações do agendador do SO.
+- **Energia total não é eficiência:** o consumo acumulado (J em 60 s) só é
+  comparável entre APIs quando a carga entregue é a mesma (FPS saturado em
+  A–C). Onde o FPS difere (Cenário D e instancing), a medida de eficiência
+  é a energia por quadro (J/frame) e o Frames/Watt.
 
 ---
 
 ## 6. Rastreabilidade
 
-- Instrumentação de captura de energia: `scripts/power_monitor.sh`.
+- Instrumentação de captura de energia: amostrador em
+  `scripts/automatizar_coleta.mjs` (oficial, 10 Hz); `scripts/power_monitor.sh`
+  é o formato manual antigo (1 Hz).
 - Timestamp de sincronização: `autoStartEpochMs` em `src/main.js`,
   `src/main-raw-webgl.js`, `src/main-raw-webgpu.js` (linha "Timestamp Unix
   de Inicio do Ensaio (ms)" nos relatórios exportados).

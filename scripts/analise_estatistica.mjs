@@ -19,6 +19,7 @@ const METRICAS = [
   ["draw_calls_medio", "rel", "Draw Calls Medio: "],
   ["gpu_tempo_medio_ms", "rel", "Tempo de GPU Medio (ms): "],
   ["cpu_overhead_medio_ms", "rel", "Overhead de CPU Medio (ms): "],
+  ["consumo_acumulado_j", "en", "Consumo Acumulado do Ensaio: "],
   ["potencia_media_w", "en", "Potencia Media (ponderada pelo tempo, janela de 60s): "],
   ["energia_por_frame_j", "en", "Assinatura Energetica Media por Quadro (Joules/Frame): "],
   ["frames_por_watt", "en", "Coeficiente de Eficiencia Medio (Frames por Watt): "],
@@ -49,14 +50,15 @@ function arquivos(dirBase) {
 const dados = {};
 for (const dir of Object.values(DIRS)) {
   for (const caminho of arquivos(dir)) {
-    const [, modo, rotulo] = caminho.split(/[\\/]/).pop().match(RE_ARQUIVO);
+    const [, modo, rotulo, run] = caminho.split(/[\\/]/).pop().match(RE_ARQUIVO);
+    const rodada = `${caminho.match(/ensaio\d+/)[0]}_run${run}`; // bloco: todas as combinacoes rodam 1x por rodada
     const rel = readFileSync(caminho, "utf-8");
     let en = "";
     try { en = readFileSync(caminho.replace(/\.txt$/, "_energia.txt"), "utf-8"); } catch {}
     const alvo = ((dados[modo] ??= {})[rotulo] ??= {});
     for (const [nome, fonte, rotuloLinha] of METRICAS) {
       const v = numeroApos(fonte === "rel" ? rel : en, rotuloLinha);
-      if (Number.isFinite(v)) (alvo[nome] ??= []).push(v);
+      if (Number.isFinite(v)) { (alvo[nome] ??= []).push(v); (alvo[`${nome}@r`] ??= []).push(rodada); }
     }
   }
 }
@@ -156,29 +158,113 @@ function comparar(a, b) { // a = WebGL, b = WebGPU
   };
 }
 
-// Autoteste: valores de referencia conhecidos das tabelas.
+// Brunner-Munzel studentizado, p-valor por permutacao exata (Neubert e Brunner, 2007). Aceita variancias
+// diferentes e empates. A = P(X<Y) + 0.5 P(X=Y) = efeito relativo de Vargha-Delaney (A12).
+function brunnerMunzel(x, y) {
+  const v = [...x, ...y], N = v.length, n1 = x.length, n2 = y.length;
+  assert(N <= 22, "permutacao exata so ate N=22"); // ponytail: acima disso, trocar por Monte Carlo
+  const c = new Float64Array(N * N); // c[j*N+i] = 1 se v_j<v_i, 0.5 se igual
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) c[j * N + i] = v[j] < v[i] ? 1 : v[j] === v[i] ? 0.5 : 0;
+  const R = Array.from({ length: N }, (_, i) => 0.5 + v.reduce((s, _, j) => s + c[j * N + i], 0));
+  const estat = (g1, g2) => {
+    const interno = (g, i) => 0.5 + g.reduce((s, j) => s + c[j * N + i], 0);
+    const m1 = g1.reduce((s, i) => s + R[i], 0) / n1, m2 = g2.reduce((s, i) => s + R[i], 0) / n2;
+    const v1 = g1.reduce((s, i) => s + (R[i] - interno(g1, i) - m1 + (n1 + 1) / 2) ** 2, 0) / (n1 - 1);
+    const v2 = g2.reduce((s, i) => s + (R[i] - interno(g2, i) - m2 + (n2 + 1) / 2) ** 2, 0) / (n2 - 1);
+    const num = n1 * n2 * (m2 - m1) / N, den = Math.sqrt(n1 * v1 + n2 * v2);
+    return { W: den > 0 ? num / den : Math.abs(num) < 1e-12 ? 0 : Math.sign(num) * Infinity, A: (m2 - (n2 + 1) / 2) / n1 };
+  };
+  const obs = estat([...Array(n1).keys()], Array.from({ length: n2 }, (_, k) => n1 + k));
+  let total = 0, extremos = 0;
+  const g1 = [], g2 = [];
+  for (let mask = 0; mask < 1 << N; mask++) {
+    let bits = 0; for (let m = mask; m; m &= m - 1) bits++;
+    if (bits !== n2) continue;
+    g1.length = g2.length = 0;
+    for (let i = 0; i < N; i++) (mask >> i & 1 ? g2 : g1).push(i);
+    total++;
+    if (Math.abs(estat(g1, g2).W) >= Math.abs(obs.W) - 1e-9) extremos++;
+  }
+  return { p: extremos / total, A: obs.A };
+}
+
+// Limiares de Vargha e Delaney (2000) para |A-0.5|: 0.06 / 0.14 / 0.21.
+const magnitudeA12 = (A) => { const e = Math.abs(A - 0.5); return e < 0.06 ? "desprezivel" : e < 0.14 ? "pequeno" : e < 0.21 ? "medio" : "grande"; };
+
+// IC por bootstrap percentil da diferenca de medias; semente fixa para reproduzir.
+// ponytail: percentil subcobre com N=9 (intervalo um pouco estreito); BCa ou bootstrap-t se a banca pedir.
+function mulberry32(s) { return () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function bootstrapIC(a, b, rng, B = 5000) {
+  const reamostra = (z) => z.map(() => z[Math.floor(rng() * z.length)]);
+  const difs = Array.from({ length: B }, () => media(reamostra(b)) - media(reamostra(a))).sort((p, q) => p - q);
+  return [difs[Math.floor(0.025 * B)], difs[Math.ceil(0.975 * B) - 1]];
+}
+
+// Correcao de Holm (step-down) sobre uma lista de p-valores; devolve ajustados na mesma ordem.
+function holm(ps) {
+  const ordem = ps.map((p, i) => [p, i]).sort((u, v) => u[0] - v[0]);
+  const aj = new Array(ps.length); let max = 0;
+  ordem.forEach(([p, i], k) => { max = Math.max(max, Math.min(1, (ps.length - k) * p)); aj[i] = max; });
+  return aj;
+}
+
+// Analise em blocos: diferenca WebGPU-WebGL dentro da mesma rodada (cada rodada roda todas as combinacoes 1x).
+// Teste de inversao de sinais exato sobre a media das diferencas pareadas.
+function pareado(a, ra, b, rb) {
+  const mapa = new Map(ra.map((r, i) => [r, a[i]]));
+  const d = rb.flatMap((r, i) => (mapa.has(r) ? [b[i] - mapa.get(r)] : []));
+  const n = d.length;
+  if (n < 2 || n > 20) return { n, p: NaN, maior: NaN, media: NaN };
+  const obs = Math.abs(media(d));
+  let ext = 0;
+  for (let s = 0; s < 1 << n; s++) if (Math.abs(d.reduce((t, x, i) => t + (s >> i & 1 ? -x : x), 0) / n) >= obs - 1e-12) ext++;
+  return { n, p: ext / (1 << n), maior: d.filter((x) => x > 0).length, media: media(d) };
+}
+
+// Autoteste: valores de referencia conhecidos das tabelas e propriedades exatas.
 assert(Math.abs(pDuasCaudas(2.262157, 9) - 0.05) < 1e-4);
 assert(Math.abs(tCritico(9) - 2.262157) < 1e-3);
 assert(Math.abs(mannWhitney([1, 2, 3], [4, 5, 6]).p - 0.1) < 1e-9);
+{ // separacao completa 9 vs 9: p = 2 / C(18,9); valores identicos: p = 1
+  const sep = brunnerMunzel([1, 2, 3, 4, 5, 6, 7, 8, 9], [11, 12, 13, 14, 15, 16, 17, 18, 19]);
+  assert(Math.abs(sep.p - 2 / 48620) < 1e-12 && sep.A === 1);
+  assert(brunnerMunzel(Array(9).fill(5), Array(9).fill(5)).p === 1);
+  const h = holm([0.01, 0.04, 0.03]);
+  assert(Math.abs(h[0] - 0.03) < 1e-12 && Math.abs(h[1] - 0.06) < 1e-12 && Math.abs(h[2] - 0.06) < 1e-12);
+  const ps = pareado([1, 2, 3, 4, 5, 6, 7, 8, 9], "abcdefghi".split(""), [2, 3, 4, 5, 6, 7, 8, 9, 10], "abcdefghi".split(""));
+  assert(Math.abs(ps.p - 2 / 512) < 1e-12 && ps.maior === 9);
+}
 
 const f = (v, c = 4) => (Number.isFinite(v) ? v.toFixed(c) : "");
-const cab = "par,cenario,metrica,n_webgl,n_webgpu,media_webgl,media_webgpu,dif,dif_pct,t,gl,p_welch,ic95_lo,ic95_hi,d_cohen,g_hedges,p_mannwhitney,metodo_mw";
-const linhas = [cab];
+const exp = (v) => (Number.isFinite(v) ? v.toExponential(3) : "");
+const cab = "par,cenario,metrica,n_webgl,n_webgpu,media_webgl,media_webgpu,dif,dif_pct,t,gl,p_welch,ic95_lo,ic95_hi,d_cohen,g_hedges,p_mannwhitney,metodo_mw,"
+  + "p_brunner_munzel,p_bm_holm,p_welch_holm,a12,cliff_delta,magnitude_a12,ic_boot_lo,ic_boot_hi,p_pareado,n_pares,pares_webgpu_maior,dif_pareada_media";
+const rng = mulberry32(20260101);
+const linhas = [];
 for (const [gl, gpu] of PARES) {
   for (const rotulo of Object.keys(dados[gl] ?? {}).sort()) {
     for (const [metrica] of METRICAS) {
       const a = dados[gl][rotulo]?.[metrica], b = dados[gpu]?.[rotulo]?.[metrica];
       if (!a || !b || a.length < 2 || b.length < 2) continue;
-      const r = comparar(a, b);
-      if (!Number.isFinite(r.t)) { // variancia zero nos dois grupos: teste indefinido
-        linhas.push([`${gpu}_vs_${gl}`, rotulo, metrica, r.n1, r.n2, f(r.m1), f(r.m2), f(r.dif), f(r.pct, 2), "", "", "", "", "", "", "", "", "sem_variancia"].join(","));
-        continue;
-      }
-      linhas.push([`${gpu}_vs_${gl}`, rotulo, metrica, r.n1, r.n2, f(r.m1), f(r.m2), f(r.dif), f(r.pct, 2), f(r.t, 3), f(r.df, 2), r.p.toExponential(3), f(r.ic_lo), f(r.ic_hi), f(r.d, 3), f(r.g, 3), r.mw.p.toExponential(3), r.mw.metodo].join(","));
+      const r = comparar(a, b), bm = brunnerMunzel(a, b), pa = pareado(a, dados[gl][rotulo][`${metrica}@r`], b, dados[gpu][rotulo][`${metrica}@r`]);
+      const [blo, bhi] = bootstrapIC(a, b, rng);
+      const welchOk = Number.isFinite(r.t); // variancia zero nos dois grupos: Welch indefinido
+      linhas.push({
+        pW: welchOk ? r.p : NaN, pBM: bm.p,
+        ini: [`${gpu}_vs_${gl}`, rotulo, metrica, r.n1, r.n2, f(r.m1), f(r.m2), f(r.dif), f(r.pct, 2)],
+        welch: welchOk ? [f(r.t, 3), f(r.df, 2), exp(r.p), f(r.ic_lo), f(r.ic_hi), f(r.d, 3), f(r.g, 3), exp(r.mw.p), r.mw.metodo]
+          : ["", "", "", "", "", "", "", "", "sem_variancia"],
+        robusto: [f(bm.A, 3), f(2 * bm.A - 1, 3), magnitudeA12(bm.A), f(blo), f(bhi), exp(pa.p), pa.n, pa.maior, f(pa.media)],
+      });
     }
   }
 }
+const hBM = holm(linhas.map((l) => l.pBM));
+const idxW = linhas.map((l, i) => i).filter((i) => Number.isFinite(linhas[i].pW));
+const hWlista = holm(idxW.map((j) => linhas[j].pW));
+const hW = new Map(idxW.map((i, k) => [i, hWlista[k]]));
+const saida = linhas.map((l, i) => [...l.ini, ...l.welch, exp(l.pBM), exp(hBM[i]), exp(hW.get(i)), ...l.robusto].join(","));
 const destino = "resultados/conclusões/dados-gerados/estatistica_comparacao.csv";
 mkdirSync(dirname(destino), { recursive: true });
-writeFileSync(destino, linhas.join("\n"), "utf-8");
-console.log(`${linhas.length - 1} comparacoes -> ${destino}`);
+writeFileSync(destino, [cab, ...saida].join("\n"), "utf-8");
+console.log(`${linhas.length} comparacoes -> ${destino}`);
