@@ -59,6 +59,7 @@ function parseArgs(argv) {
     metricasGpu: true,
     randomizar: true,
     aquecimento: true,
+    semVsync: false,
     intervaloBlocosMin: 0,
   };
 
@@ -98,6 +99,9 @@ function parseArgs(argv) {
         break;
       case "--sem-aquecimento":
         opts.aquecimento = false;
+        break;
+      case "--sem-vsync":
+        opts.semVsync = true;
         break;
       case "--intervalo-blocos":
         opts.intervaloBlocosMin = Number(next());
@@ -321,7 +325,8 @@ async function correlacionarMetricasGpu(caminhoRelatorio, caminhoPowerLog) {
 
 async function rodarEnsaio(browser, { modo, cenario, run, opts, caminhoPowerLog, aquecimento = false }) {
   const url = URL_BUILDER[modo](opts.baseUrl, cenario);
-  const destDir = DEST_DIR[modo];
+  // Sem vsync: saida separada, nunca mistura com o dataset principal.
+  const destDir = opts.semVsync ? DEST_DIR[modo].replace(/^resultados\//, "resultados_sem_vsync/") : DEST_DIR[modo];
 
   // Sufixo "aquecimento" (nao "_run<N>") marca claramente que nao e uma
   // repeticao oficial, evitando colidir com o arquivo run<N> real.
@@ -336,8 +341,11 @@ async function rodarEnsaio(browser, { modo, cenario, run, opts, caminhoPowerLog,
   const page = await context.newPage();
 
   page.on("pageerror", (err) => console.error(`  [erro de pagina] ${err.message}`));
+  let texturasFalhas = 0;
   page.on("console", (msg) => {
-    if (msg.type() === "error") console.error(`  [console.error] ${msg.text()}`);
+    if (msg.type() !== "error") return;
+    console.error(`  [console.error] ${msg.text()}`);
+    if (/BLOB_OUT_OF_MEMORY|Couldn't load texture/.test(msg.text())) texturasFalhas++;
   });
 
   try {
@@ -351,6 +359,7 @@ async function rodarEnsaio(browser, { modo, cenario, run, opts, caminhoPowerLog,
 
     // Pequena folga para o loop de animação estabilizar antes do [SPACE].
     await sleep(500);
+    if (texturasFalhas > 0) throw new Error(`${texturasFalhas} textura(s) nao carregaram (memoria do navegador); ensaio invalido`);
 
     const downloadPromise = page.waitForEvent("download", {
       timeout: DURACAO_ENSAIO_MS + 30_000,
@@ -458,7 +467,11 @@ async function main() {
     "a automacao."
   );
 
-  const browser = await chromium.launch({ channel: opts.canal, headless: opts.headless });
+  const browser = await chromium.launch({
+    channel: opts.canal,
+    headless: opts.headless,
+    args: opts.semVsync ? ["--disable-frame-rate-limit", "--disable-gpu-vsync"] : [],
+  });
 
   const resultados = [];
   const inicioTotal = Date.now();

@@ -8,6 +8,7 @@ diretamente na pasta imagens/ do documento LaTeX.
 Uso: py -3 scripts/gerar_graficos.py
 """
 
+import os
 import re
 import statistics
 from pathlib import Path
@@ -16,13 +17,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 REPO = Path(__file__).resolve().parents[1]
-OUT_DIR = REPO.parent / "TCC_CComp_2026 (1)" / "imagens"
+SV = os.environ.get("SEM_VSYNC") == "1"  # le resultados_sem_vsync/, grava em imagens_sem_vsync/
+RAIZ = "resultados_sem_vsync" if SV else "resultados"
+OUT_DIR = REPO.parent / "TCC_CComp_2026 (1)" / ("imagens_sem_vsync" if SV else "imagens")
 
 DIRS = {
-    "webgl": "resultados/threejs-webgl",
-    "webgpu": "resultados/threejs-webgpu",
-    "webgl-raw": "resultados/raw-webgl",
-    "webgpu-raw": "resultados/raw-webgpu",
+    "webgl": f"{RAIZ}/threejs-webgl",
+    "webgpu": f"{RAIZ}/threejs-webgpu",
+    "webgl-raw": f"{RAIZ}/raw-webgl",
+    "webgpu-raw": f"{RAIZ}/raw-webgpu",
 }
 
 RE_ARQUIVO = re.compile(

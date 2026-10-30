@@ -1,8 +1,10 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+// SEM_VSYNC=1 le resultados_sem_vsync/ e grava em dados-gerados_sem_vsync/.
+const GERADOS = process.env.SEM_VSYNC === "1" ? "resultados/conclusões/dados-gerados_sem_vsync" : "resultados/conclusões/dados-gerados";
 
-const ORIGEM = "resultados/conclusões/dados-gerados/medias_por_teste.csv";
-const DESTINO = "resultados/conclusões/dados-gerados/tabela_medias.txt";
+const ORIGEM = `${GERADOS}/medias_por_teste.csv`;
+const DESTINO = `${GERADOS}/tabela_medias.txt`;
 
 const ORDEM_CENARIO = ["cenario_a", "cenario_b", "cenario_c", "cenario_d", "instancing_n500", "instancing_n2000", "instancing_n5000"];
 const ORDEM_MODO = ["webgl", "webgpu", "webgl-raw", "webgpu-raw"];

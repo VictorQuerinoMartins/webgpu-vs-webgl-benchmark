@@ -1,11 +1,14 @@
 import { readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
+// SEM_VSYNC=1 le resultados_sem_vsync/ e grava em dados-gerados_sem_vsync/.
+const RAIZ = process.env.SEM_VSYNC === "1" ? "resultados_sem_vsync" : "resultados";
+const GERADOS = process.env.SEM_VSYNC === "1" ? "resultados/conclusões/dados-gerados_sem_vsync" : "resultados/conclusões/dados-gerados";
 
 const DIRS = {
-  webgl: "resultados/threejs-webgl",
-  webgpu: "resultados/threejs-webgpu",
-  "webgl-raw": "resultados/raw-webgl",
-  "webgpu-raw": "resultados/raw-webgpu",
+  webgl: `${RAIZ}/threejs-webgl`,
+  webgpu: `${RAIZ}/threejs-webgpu`,
+  "webgl-raw": `${RAIZ}/raw-webgl`,
+  "webgpu-raw": `${RAIZ}/raw-webgpu`,
 };
 
 const RE_ARQUIVO = /^relatorio_benchmark_(webgl-raw|webgpu-raw|webgl|webgpu)_(cenario_[a-d]|instancing_n\d+)_run(\d+)\.txt$/;
@@ -151,7 +154,7 @@ const csv = [COLUNAS.map(([nome]) => nome).join(",")]
   .concat(linhas.map((g) => COLUNAS.map(([, fn]) => fn(g)).join(",")))
   .join("\n");
 
-const destino = "resultados/conclusões/dados-gerados/medias_por_teste.csv";
+const destino = `${GERADOS}/medias_por_teste.csv`;
 mkdirSync(dirname(destino), { recursive: true });
 writeFileSync(destino, csv, "utf-8");
 console.log(`Consolidado ${linhas.length} combinacoes (modo x cenario) -> ${destino}`);

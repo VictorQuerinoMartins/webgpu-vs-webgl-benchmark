@@ -5,6 +5,7 @@ Uso: py -3 scripts/verificar_premissas.py
 """
 
 import csv
+import os
 import re
 from pathlib import Path
 
@@ -12,7 +13,9 @@ import numpy as np
 from scipy import stats
 
 REPO = Path(__file__).resolve().parents[1]
-OUT = REPO / "resultados/conclusões/dados-gerados/verificacao_premissas.csv"
+SV = os.environ.get("SEM_VSYNC") == "1"  # le resultados_sem_vsync/
+RAIZ = "resultados_sem_vsync" if SV else "resultados"
+OUT = REPO / ("resultados/conclusões/dados-gerados_sem_vsync" if SV else "resultados/conclusões/dados-gerados") / "verificacao_premissas.csv"
 DIRS = {
     "webgl": "threejs-webgl", "webgpu": "threejs-webgpu",
     "webgl-raw": "raw-webgl", "webgpu-raw": "raw-webgpu",
@@ -46,7 +49,7 @@ def numero_apos(txt, rotulo):
 def carregar():
     dados = {}  # dados[modo][rotulo][metrica] = [valores]
     for modo, pasta in DIRS.items():
-        for arq in (REPO / "resultados" / pasta).glob("ensaio*/*/*.txt"):
+        for arq in (REPO / RAIZ / pasta).glob("ensaio*/*/*.txt"):
             m = RE_ARQ.match(arq.name)
             if not m:
                 continue

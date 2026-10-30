@@ -1,14 +1,17 @@
 import { readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import assert from "node:assert";
+// SEM_VSYNC=1 le resultados_sem_vsync/ e grava em dados-gerados_sem_vsync/.
+const RAIZ = process.env.SEM_VSYNC === "1" ? "resultados_sem_vsync" : "resultados";
+const GERADOS = process.env.SEM_VSYNC === "1" ? "resultados/conclusões/dados-gerados_sem_vsync" : "resultados/conclusões/dados-gerados";
 
 // Compara WebGPU vs WebGL por (cenario, metrica) usando as N repeticoes individuais de todos os ensaios.
 // Diferenca = WebGPU - WebGL. d = diferenca / sqrt((s1^2+s2^2)/2) (coerente com Welch); g = d com correcao de Hedges.
 const DIRS = {
-  webgl: "resultados/threejs-webgl",
-  webgpu: "resultados/threejs-webgpu",
-  "webgl-raw": "resultados/raw-webgl",
-  "webgpu-raw": "resultados/raw-webgpu",
+  webgl: `${RAIZ}/threejs-webgl`,
+  webgpu: `${RAIZ}/threejs-webgpu`,
+  "webgl-raw": `${RAIZ}/raw-webgl`,
+  "webgpu-raw": `${RAIZ}/raw-webgpu`,
 };
 const PARES = [["webgl", "webgpu"], ["webgl-raw", "webgpu-raw"]];
 const RE_ARQUIVO = /^relatorio_benchmark_(webgl-raw|webgpu-raw|webgl|webgpu)_(cenario_[a-d]|instancing_n\d+)_run(\d+)\.txt$/;
@@ -271,7 +274,7 @@ function holmPorFamilia(valor) {
 }
 const hBM = holmPorFamilia((l) => l.pBM), hW = holmPorFamilia((l) => l.pW);
 const saida = linhas.map((l, i) => [...l.ini, ...l.welch, exp(l.pBM), familia(l).split("|")[1], exp(hBM[i]), exp(hW[i]), ...l.robusto].join(","));
-const destino = "resultados/conclusões/dados-gerados/estatistica_comparacao.csv";
+const destino = `${GERADOS}/estatistica_comparacao.csv`;
 mkdirSync(dirname(destino), { recursive: true });
 writeFileSync(destino, [cab, ...saida].join("\n"), "utf-8");
 console.log(`${linhas.length} comparacoes -> ${destino}`);
