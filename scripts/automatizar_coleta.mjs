@@ -323,7 +323,24 @@ async function correlacionarMetricasGpu(caminhoRelatorio, caminhoPowerLog) {
   }
 }
 
-async function rodarEnsaio(browser, { modo, cenario, run, opts, caminhoPowerLog, aquecimento = false }) {
+// Falha de textura (memoria do Chrome) e transitoria: ensaio invalido nao grava nada, entao repete.
+async function rodarEnsaio(browser, args) {
+  let r;
+  for (let t = 1; t <= 3; t++) {
+    r = await rodarEnsaioUmaVez(browser, args);
+    if (r.ok || !/textura/.test(r.error)) return r;
+    console.warn(`  Tentativa ${t}/3 invalida por textura; aguardando 60s para repetir...`);
+    await sleep(60_000);
+  }
+  return r;
+}
+
+async function lerVramMiB() {
+  const { stdout } = await execFileAsync("nvidia-smi", ["--query-gpu=memory.used", "--format=csv,noheader,nounits"]);
+  return Number(stdout.trim().split(/\r?\n/)[0]);
+}
+
+async function rodarEnsaioUmaVez(browser, { modo, cenario, run, opts, caminhoPowerLog, aquecimento = false }) {
   const url = URL_BUILDER[modo](opts.baseUrl, cenario);
   // Sem vsync: saida separada, nunca mistura com o dataset principal.
   const destDir = opts.semVsync ? DEST_DIR[modo].replace(/^resultados\//, "resultados_sem_vsync/") : DEST_DIR[modo];
@@ -359,6 +376,11 @@ async function rodarEnsaio(browser, { modo, cenario, run, opts, caminhoPowerLog,
 
     // Pequena folga para o loop de animação estabilizar antes do [SPACE].
     await sleep(500);
+    // Regra 2: navegador na iGPU deixa a VRAM da NVIDIA em repouso; ensaio invalido.
+    if (opts.vramIdleMiB != null) {
+      const vram = await lerVramMiB();
+      if (vram < opts.vramIdleMiB + 150) throw new Error(`GPU NVIDIA sem carga (VRAM ${vram} MiB, repouso ${opts.vramIdleMiB}): provavel iGPU em uso; ensaio invalido`);
+    }
     if (texturasFalhas > 0) throw new Error(`${texturasFalhas} textura(s) nao carregaram (memoria do navegador); ensaio invalido`);
 
     const downloadPromise = page.waitForEvent("download", {
@@ -467,6 +489,7 @@ async function main() {
     "a automacao."
   );
 
+  if (nvidiaOk) opts.vramIdleMiB = await lerVramMiB();
   const browser = await chromium.launch({
     channel: opts.canal,
     headless: opts.headless,

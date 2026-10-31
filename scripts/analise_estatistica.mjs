@@ -264,7 +264,7 @@ for (const [gl, gpu] of PARES) {
 }
 // Familias do Holm: por par de APIs (Three.js, RAW), separando metricas primarias (confirmatorias) das exploratorias.
 // Primarias: desempenho (frame time), memoria (VRAM) e energia (J/frame e J em 60 s; este so e comparavel onde o FPS e igual).
-const PRIMARIAS = new Set(["frame_time_medio_ms", "vram_media_mb", "energia_por_frame_j", "consumo_acumulado_j"]);
+const PRIMARIAS = new Set(["frame_time_medio_ms", "vram_media_mb", "energia_por_frame_j"]);
 const familia = (l) => `${l.ini[0]}|${PRIMARIAS.has(l.ini[2]) ? "primaria" : "exploratoria"}`;
 function holmPorFamilia(valor) {
   const aj = new Array(linhas.length).fill(NaN), grupos = new Map();
