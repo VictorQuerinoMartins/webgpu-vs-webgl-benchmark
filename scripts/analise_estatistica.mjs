@@ -17,9 +17,11 @@ const PARES = [["webgl", "webgpu"], ["webgl-raw", "webgpu-raw"]];
 const RE_ARQUIVO = /^relatorio_benchmark_(webgl-raw|webgpu-raw|webgl|webgpu)_(cenario_[a-d]|instancing_n\d+)_run(\d+)\.txt$/;
 
 const METRICAS = [
+  ["tempo_carregamento_ms", "ttff", ""],
   ["fps_medio", "rel", "Taxa de Quadros (FPS) Media: "],
   ["frame_time_medio_ms", "rel", "Tempo de Frame Medio: "],
   ["draw_calls_medio", "rel", "Draw Calls Medio: "],
+  ["draw_calls_pond_tempo", "dct", ""],
   ["gpu_tempo_medio_ms", "rel", "Tempo de GPU Medio (ms): "],
   ["cpu_overhead_medio_ms", "rel", "Overhead de CPU Medio (ms): "],
   ["consumo_acumulado_j", "en", "Consumo Acumulado do Ensaio: "],
@@ -28,6 +30,22 @@ const METRICAS = [
   ["frames_por_watt", "en", "Coeficiente de Eficiencia Medio (Frames por Watt): "],
   ["vram_media_mb", "en", "VRAM Media durante o Ensaio: "],
 ];
+
+// Media de draw calls ponderada pelo tempo de quadro (a media por quadro depende da taxa de quadros).
+function drawCallsPonderado(txt) {
+  const linhas = txt.split("\n");
+  const i = linhas.findIndex((l) => l.startsWith("Tempo Decorrido (ms)"));
+  if (i < 0) return null;
+  const cab = linhas[i].split(",");
+  const ic = cab.indexOf("Draw Calls"), it = cab.indexOf("Tempo de Frame (ms)");
+  let soma = 0, tempo = 0;
+  for (const l of linhas.slice(i + 1)) {
+    const p = l.split(",");
+    const d = Number(p[ic]), t = Number(p[it]);
+    if (Number.isFinite(d) && Number.isFinite(t) && t > 0) { soma += d * t; tempo += t; }
+  }
+  return tempo > 0 ? soma / tempo : null;
+}
 
 function numeroApos(txt, rotulo) {
   const linha = txt.split("\n").find((l) => l.startsWith(rotulo));
@@ -60,7 +78,9 @@ for (const dir of Object.values(DIRS)) {
     try { en = readFileSync(caminho.replace(/\.txt$/, "_energia.txt"), "utf-8"); } catch {}
     const alvo = ((dados[modo] ??= {})[rotulo] ??= {});
     for (const [nome, fonte, rotuloLinha] of METRICAS) {
-      const v = numeroApos(fonte === "rel" ? rel : en, rotuloLinha);
+      const v = fonte === "ttff" ? Number(rel.match(/\(([\d.]+) ms\)/)?.[1])
+        : fonte === "dct" ? drawCallsPonderado(rel)
+        : numeroApos(fonte === "rel" ? rel : en, rotuloLinha);
       if (Number.isFinite(v)) { (alvo[nome] ??= []).push(v); (alvo[`${nome}@r`] ??= []).push(rodada); }
     }
   }

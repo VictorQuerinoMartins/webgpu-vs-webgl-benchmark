@@ -22,6 +22,13 @@ Os ensaios experimentais são executados sob uma arquitetura fixa e imutável pa
 * **Unidade Gráfica Dedicada (dGPU):** NVIDIA GeForce RTX 3050 Laptop GPU (4GB VRAM - Alvo principal do estresse gráfico).
 * **Sistema Operacional:** Microsoft Windows 11 Home Single Language (Ambiente Host: pt-BR).
 
+### Condições de coleta do dataset oficial (atualizado 2026-10-31)
+* **Navegador:** Microsoft Edge 156 (Chromium), via Playwright (`--canal msedge`). O Chrome foi abandonado porque nesta máquina recusa parte dos blobs de textura do Cenário D (`ERR_BLOB_OUT_OF_MEMORY`, limite ~500 MB contra ~1 GB do Edge). Dados anteriores do Chrome estão arquivados fora do repositório e **não** entram na análise.
+* **GPU dedicada obrigatória no Windows:** `HKCU\Software\Microsoft\DirectX\UserGpuPreferences` precisa ter `msedge.exe` com `GpuPreference=2;` (Configurações > Sistema > Vídeo). Sem isso o Edge roda na Intel UHD e o coletor invalida o ensaio (guarda de VRAM, delta mínimo de 60 MiB sobre o repouso).
+* **Sem vsync:** flags `--disable-frame-rate-limit --disable-gpu-vsync` (opção `--sem-vsync` do coletor; saída em `resultados_sem_vsync/`). Medições com vsync ficam como trabalho futuro.
+* **MSAA 4x nos quatro modos** (paridade; o WebGPU-RAW antigo sem MSAA foi descartado).
+* **Ventilação:** NitroSense com ventoinhas no máximo, idêntico nos três lotes; notebook na tomada; sem tocar no mouse/teclado durante o lote (~100 min).
+
 ---
 
 ## 3. MATRIZ DE MÉTRICAS COMPARATIVAS (ESCOPO DO EXPERIMENTO)
@@ -34,10 +41,10 @@ A avaliação quantitativa entre as duas APIs é governada estritamente pelas se
 * **Chamadas de Renderização (Draw Calls):** Contagem de instruções enviadas da CPU para a GPU por frame. Variável principal para expor o gargalo de overhead do WebGL.
 * **Alocação de Memória de Vídeo (VRAM - MB):** Volume de memória volátil da dGPU alocado dinamicamente para geometria, malhas e texturas.
 * **Tempo para o Primeiro Quadro (Time to First Frame - TTFF):** Delta de tempo desde o início da requisição de rede do arquivo compactado via algoritmo Google Draco até a renderização do primeiro pixel na tela.
-* **Decomposição CPU/GPU (Tempo de GPU e Overhead de CPU - ms, adicionado 2026-08-24):** GPU timestamp queries (`timestamp-query` do WebGPU nativo/`WebGPURenderer` via `trackTimestamp`; `EXT_disjoint_timer_query_webgl2` do WebGL2) medem o tempo real de execução na GPU, isolado do tempo de parede do quadro. Overhead de CPU = Frame Time − Tempo de GPU. Objetivo: separar quanto da diferença de desempenho entre APIs vem de trabalho de GPU genuinamente mais caro vs. overhead de submissão de comandos no lado da CPU — a promessa central do WebGPU é reduzir especificamente o segundo. **Ressalva:** nos Cenários A/B/C, onde o FPS satura perto do teto de atualização do monitor (~144Hz), essa decomposição fica contaminada por tempo de espera de vsync, não custo real de submissão — mais confiável no Cenário D e no eixo de instancing, onde o Frame Time ultrapassa claramente o teto do monitor.
+* **Decomposição CPU/GPU (Tempo de GPU e Overhead de CPU - ms, adicionado 2026-08-24):** GPU timestamp queries (`timestamp-query` do WebGPU nativo/`WebGPURenderer` via `trackTimestamp`; `EXT_disjoint_timer_query_webgl2` do WebGL2) medem o tempo real de execução na GPU, isolado do tempo de parede do quadro. Overhead de CPU = Frame Time − Tempo de GPU. Objetivo: separar quanto da diferença de desempenho entre APIs vem de trabalho de GPU genuinamente mais caro vs. overhead de submissão de comandos no lado da CPU — a promessa central do WebGPU é reduzir especificamente o segundo. **Ressalva (atualizada 2026-10-31):** sem vsync a contaminação por espera do monitor deixa de existir, mas o intervalo da consulta de GPU abrange o tempo entre o primeiro e o último comando; se a CPU submete mais devagar que a GPU executa, a espera entra na medida. Logo, o tempo de GPU entre APIs é indício, não prova, e a explicação por overhead de CPU permanece hipótese (indício indireto: potência de ~22 W do WebGL do Three.js no instancing, contra ~60 W nos demais).
 
 ### B. Dimensão de Computação Verde (Green IT)
-* **Potência Instantânea da dGPU (Power Draw - W):** Consumo energético bruto exigido pela RTX 3050 sob estresse, amostrado a 10 Hz via utilitário `nvidia-smi` (`--loop-ms=100`, atualizado 2026-08-24 — antes 1 Hz).
+* **Potência Instantânea da dGPU (Power Draw - W):** Consumo energético bruto exigido pela RTX 3050 sob estresse, solicitado a 10 Hz via `nvidia-smi` (`--loop-ms=100`), mas o sensor atualiza a cada ~500 ms (resolução efetiva ~2 Hz); inclui o consumo em repouso, e a energia da CPU não é medida.
 * **Assinatura Energética por Quadro (Joules):** Custo de hardware real por frame individual, calculado por: $E_f = P_{\text{inst}} \times (\Delta t_{\text{frame}} / 1000)$.
 * **Coeficiente de Eficiência Quadro-por-Watt (Frames/W):** Razão matemática que define a produtividade ecológica dividindo o FPS instantâneo pelos Watts consumidos.
 * **Consumo Acumulado do Ensaio (Joules / Wh):** A integral sob a curva de potência consumida durante os 60 segundos exatos do trajeto da câmera.
@@ -53,6 +60,12 @@ O modelo tridimensional utilizado é o **Amazon Lumberyard Bistro** (cena *Exter
 * **Cenário D (Ruptura, extrapolação de escopo):** `CenarioBistroD.glb` (~728 MB) - Mesma cena, texturas em 2048x2048 pixels (2K) com compressão Draco menos agressiva; 4º ponto da progressão de carga de textura A→B→C→D, usado para mapear o ponto de colapso de cada API. Documentado no `main.tex` e em `COMO-TESTAR-CENARIOS.md` §6.
 
 Além da progressão de textura, há um **eixo experimental paralelo de estresse de Draw Calls (instancing)**, isolando a variável de número de objetos em vez de resolução de textura: várias cópias (`scene.clone()`, sem `THREE.InstancedMesh`) do objeto Vespa extraído do próprio Bistro Exterior (`public/objetos/vespa.glb`), em três densidades — **N=500, N=2000, N=5000** — acessadas via `?densidade=N` (ver `src/main.js`, `CONFIG_DENSIDADE_INSTANCING`, e `COMO-TESTAR-CENARIOS.md` §6.1). Cenário D e o cenário de instancing fazem parte do escopo oficial de dados do TCC (confirmado pelo usuário em 2026-08-21) — **D já está descrito no `main.tex`; o eixo de instancing ainda precisa de uma seção própria na metodologia antes da defesa.**
+
+### Dataset oficial e análise (atualizado 2026-10-31)
+* **Desenho:** 28 combinações (4 modos x 7 cenários), 3 lotes x 3 repetições = N=9 por combinação (252 ensaios), blocos com ordem aleatória por repetição, 1 aquecimento descartado por lote. Dados em `resultados_sem_vsync/<modo>/ensaioN/{cenarioA..D,testeDrawCall}/`; potência e logs em `resultados/power_logs_sem_vsync/ensaioN/`. A coleta é `node scripts/automatizar_coleta.mjs ... --sem-vsync --canal msedge` (opção `--apenas-runs` repõe repetições específicas).
+* **Análise:** rodar os scripts com `SEM_VSYNC=1` (`consolidar_medias.mjs`, `gerar_tabela_txt.mjs`, `analise_estatistica.mjs`, `verificar_premissas.py`, `gerar_graficos.py`). Saídas em `resultados/conclusões/dados-gerados_sem_vsync/` e figuras em `TCC_CComp_2026 (1)/imagens_sem_vsync/`. **Sem `SEM_VSYNC=1` os scripts leem/sobrescrevem o dataset antigo.**
+* **Estatística:** Brunner-Munzel (permutação exata) + Vargha-Delaney A12 + Holm por família (par de APIs x primárias|exploratórias). Primárias: tempo de quadro médio, VRAM média, energia por quadro. Exploratórias: FPS, TTFF, tempo de GPU, overhead de CPU, potência, quadros/W, draw calls. Energia acumulada é só descritiva.
+* **Cuidados de leitura:** o FPS médio (1/Δt por quadro) infla quando o modo alterna rajadas e paradas — usar tempo de quadro; draw calls são reportados ponderados pelo tempo de quadro (`draw_calls_pond_tempo`), pois a média por quadro depende da taxa de quadros; 17 dos 252 ensaios têm potência atípica (>8 W da mediana), causa não identificada.
 
 ---
 

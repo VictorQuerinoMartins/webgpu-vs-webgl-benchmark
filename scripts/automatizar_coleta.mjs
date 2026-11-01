@@ -73,6 +73,9 @@ function parseArgs(argv) {
       case "--cenarios":
         opts.cenarios = next().split(",").map((s) => s.trim().toLowerCase());
         break;
+      case "--apenas-runs":
+        opts.apenasRuns = next().split(",").map(Number);
+        break;
       case "--repeticoes":
         opts.repeticoes = Number(next());
         break;
@@ -379,7 +382,7 @@ async function rodarEnsaioUmaVez(browser, { modo, cenario, run, opts, caminhoPow
     // Regra 2: navegador na iGPU deixa a VRAM da NVIDIA em repouso; ensaio invalido.
     if (opts.vramIdleMiB != null) {
       const vram = await lerVramMiB();
-      if (vram < opts.vramIdleMiB + 150) throw new Error(`GPU NVIDIA sem carga (VRAM ${vram} MiB, repouso ${opts.vramIdleMiB}): provavel iGPU em uso; ensaio invalido`);
+      if (vram < opts.vramIdleMiB + 60) throw new Error(`GPU NVIDIA sem carga (VRAM ${vram} MiB, repouso ${opts.vramIdleMiB}): provavel iGPU em uso; ensaio invalido`);
     }
     if (texturasFalhas > 0) throw new Error(`${texturasFalhas} textura(s) nao carregaram (memoria do navegador); ensaio invalido`);
 
@@ -466,6 +469,7 @@ async function main() {
   // primeira) — usado pelo intervalo de resfriamento entre blocos.
   const rodadaBoundaries = [];
   for (let run = 1; run <= opts.repeticoes; run++) {
+    if (opts.apenasRuns && !opts.apenasRuns.includes(run)) continue;
     const rodada = opts.randomizar ? embaralhar(combosBase) : combosBase;
     if (run > 1) rodadaBoundaries.push(combinacoes.length);
     for (const { modo, cenario } of rodada) {

@@ -1,0 +1,12 @@
+[
+  {
+    "modo": "webgl-raw",
+    "cenario": "n5000",
+    "run": 2
+  },
+  {
+    "modo": "webgl-raw",
+    "cenario": "n5000",
+    "run": 3
+  }
+]

@@ -37,6 +37,22 @@ function listarArquivosDeRelatorio(dirBase) {
   return resultado;
 }
 
+// Media de draw calls ponderada pelo tempo de quadro (a media por quadro depende da taxa de quadros).
+function drawCallsPonderado(txt) {
+  const linhas = txt.split("\n");
+  const i = linhas.findIndex((l) => l.startsWith("Tempo Decorrido (ms)"));
+  if (i < 0) return null;
+  const cab = linhas[i].split(",");
+  const ic = cab.indexOf("Draw Calls"), it = cab.indexOf("Tempo de Frame (ms)");
+  let soma = 0, tempo = 0;
+  for (const l of linhas.slice(i + 1)) {
+    const p = l.split(",");
+    const d = Number(p[ic]), t = Number(p[it]);
+    if (Number.isFinite(d) && Number.isFinite(t) && t > 0) { soma += d * t; tempo += t; }
+  }
+  return tempo > 0 ? soma / tempo : null;
+}
+
 function numeroApos(texto, rotulo) {
   const linha = texto.split("\n").find((l) => l.startsWith(rotulo));
   if (!linha) return null;
@@ -55,6 +71,7 @@ function parseRelatorio(caminho) {
     frameTimeMaximo: numeroApos(txt, "Tempo de Frame Maximo: "),
     drawCallsMedio: numeroApos(txt, "Draw Calls Medio: "),
     drawCallsMaximo: numeroApos(txt, "Draw Calls Maximo: "),
+    drawCallsPondTempo: drawCallsPonderado(txt),
     geometriasVram: numeroApos(txt, "Geometrias na VRAM (final): "),
     texturasVram: numeroApos(txt, "Texturas na VRAM (final): "),
     gpuTempoMedio: numeroApos(txt, "Tempo de GPU Medio (ms): "),
@@ -123,6 +140,7 @@ const COLUNAS = [
   ["frame_time_maximo_ms", (g) => media(g.runs.map((r) => r.frameTimeMaximo))],
   ["draw_calls_medio", (g) => media(g.runs.map((r) => r.drawCallsMedio))],
   ["draw_calls_maximo", (g) => media(g.runs.map((r) => r.drawCallsMaximo))],
+  ["draw_calls_pond_tempo", (g) => media(g.runs.map((r) => r.drawCallsPondTempo))],
   ["geometrias_vram_final", (g) => media(g.runs.map((r) => r.geometriasVram))],
   ["texturas_vram_final", (g) => media(g.runs.map((r) => r.texturasVram))],
   ["gpu_tempo_medio_ms", (g) => media(g.runs.map((r) => r.gpuTempoMedio))],
