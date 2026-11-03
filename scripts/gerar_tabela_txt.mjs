@@ -72,8 +72,7 @@ const greenIt = tabela(`Tabela 2 - Dimensao de Computacao Verde (Green IT) (medi
   ["Temp. Media (C)", (l) => num(l.temperatura_media_c, 1)],
 ], dados);
 
-// Decomposicao CPU/GPU via timestamp queries (WebGPU nativo / EXT_disjoint_timer_query_webgl2)
-// — adicionado 2026-08-24, ver CHANGES-LOG.md e LIMITACOES-VALIDACAO-LITERATURA.md.
+// Decomposição CPU/GPU via timestamp queries (WebGPU / EXT_disjoint_timer_query_webgl2)
 const cpuGpu = tabela(`Tabela 3 - Decomposicao CPU/GPU via Timestamp Queries (media de ${repeticoes} repeticoes)`, [
   ["Frame Time Medio (ms)", (l) => num(l.frame_time_medio_ms, 2)],
   ["Tempo de GPU Medio (ms)", (l) => num(l.gpu_tempo_medio_ms, 3)],

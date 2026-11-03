@@ -1,33 +1,8 @@
 #!/usr/bin/env node
-// =====================================================================
-// Correlaciona um relatorio_benchmark_*.txt (FPS/Frame Time, gerado pelo
-// app em src/main.js ou src/main-raw-*.js) com um log de
-// potencia+VRAM+temperatura da GPU (timestamp,watts,vram_mb,temp_c a 10 Hz,
-// epoch em ms — gerado por scripts/automatizar_coleta.mjs; tambem aceita o
-// formato antigo de scripts/power_monitor.sh, 1 Hz e epoch em s) para
-// calcular: a dimensao "Computacao Verde"
-// da secao 3.B do CLAUDE.md (Joules/Frame, Frames/Watt, Consumo Acumulado
-// em J/Wh), a metrica de VRAM (MB) da secao 3.A — que nenhum dos 4
-// renderizadores consegue medir sozinho de dentro do navegador — e a
-// temperatura da GPU, que nao e uma metrica da pesquisa mas serve para
-// auditar deriva termica em lotes longos (ver embaralhar() em
-// automatizar_coleta.mjs).
-//
-// Uso:
-//   node scripts/analisar_energia.mjs <relatorio.txt> <power_log.csv> [saida.txt]
-//
-// Pre-requisito: o relatorio.txt precisa conter a linha
-//   "Timestamp Unix de Inicio do Ensaio (ms): <epoch>"
-// que main.js / main-raw-webgl.js / main-raw-webgpu.js passaram a
-// exportar automaticamente. Relatorios antigos (antes dessa mudanca) nao
-// tem essa linha e nao podem ser correlacionados retroativamente — o
-// ensaio precisa ser refeito.
-//
-// Logs de potencia com apenas 2 colunas (timestamp,watts — formato antigo
-// do power_monitor.sh anterior a esta versao) continuam funcionando: a
-// secao de VRAM e omitida do relatorio de saida com um aviso, o resto do
-// calculo (energia) segue normalmente.
-// =====================================================================
+// Correlaciona relatorio_benchmark_*.txt com o log de potência/VRAM/temperatura da GPU.
+// Calcula energia por quadro, quadros/W, energia acumulada e VRAM.
+// Uso: node scripts/analisar_energia.mjs <relatorio.txt> <power_log.csv> [saida.txt]
+// Requer a linha "Timestamp Unix de Inicio do Ensaio (ms)" no relatório.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
@@ -47,9 +22,7 @@ if (!caminhoRelatorio || !caminhoPowerLog) {
   );
 }
 
-// ---------------------------------------------------------------------
-// 1. Parse do relatorio_benchmark_*.txt
-// ---------------------------------------------------------------------
+// 1. Parse do relatório
 function parseRelatorio(caminho) {
   const texto = readFileSync(caminho, "utf-8");
   const linhas = texto.split(/\r?\n/);
@@ -112,14 +85,7 @@ function parseRelatorio(caminho) {
   };
 }
 
-// ---------------------------------------------------------------------
-// 2. Parse do power_log.csv. Formato atual (automatizar_coleta.mjs, desde
-//    2026-08-26): timestamp,watts,vram_mb,temp_c,clock_mhz,throttle_sw,
-//    throttle_hw. Formatos antigos (ate 4 colunas, sem clock/throttle, ou
-//    power_monitor.sh com so timestamp+watts) ainda sao aceitos — os campos
-//    ausentes ficam undefined e as secoes correspondentes sao omitidas na
-//    saida.
-// ---------------------------------------------------------------------
+// 2. Parse do power_log.csv; campos extras são opcionais (formatos antigos aceitos).
 function parsePowerLog(caminho) {
   const texto = readFileSync(caminho, "utf-8");
   const linhas = texto.split(/\r?\n/).filter((l) => l.trim().length > 0);
@@ -129,10 +95,7 @@ function parsePowerLog(caminho) {
     if (linha.toLowerCase().startsWith("timestamp")) continue; // cabecalho
     const [tsStr, wattsStr, vramStr, tempStr, clockStr, throttleSwStr, throttleHwStr] = linha.split(",");
     const tsRaw = Number(tsStr);
-    // automatizar_coleta.mjs (10 Hz, atual) grava epoch em ms; power_monitor.sh
-    // (1 Hz, formato antigo/manual) grava epoch em s via `date +%s`. Epoch em
-    // ms hoje e da ordem de 1.7e12; em s, da ordem de 1.7e9 — limiar de 1e12
-    // distingue os dois formatos sem precisar de um campo extra no CSV.
+    // epoch em ms (atual) ou s (antigo); o limiar 1e12 distingue os dois.
     const epochSec = tsRaw > 1e12 ? tsRaw / 1000 : tsRaw;
     const watts = Number(wattsStr);
     const vramMb = vramStr !== undefined ? Number(vramStr) : undefined;
@@ -161,13 +124,7 @@ function parsePowerLog(caminho) {
   return amostras;
 }
 
-// ---------------------------------------------------------------------
-// 3. Interpolacao linear de um campo numerico (watts ou vramMb) num
-//    instante absoluto (epoch s). Fora do intervalo amostrado, satura no
-//    valor da amostra mais proxima (o nvidia-smi so amostra a intervalos
-//    discretos; o valor real nao muda instantaneamente fora da janela
-//    monitorada).
-// ---------------------------------------------------------------------
+// 3. Interpolação linear no instante epoch; satura fora do intervalo amostrado.
 function criarInterpolador(amostras, campo) {
   return function (epochSec) {
     if (epochSec <= amostras[0].epochSec) return amostras[0][campo];
@@ -186,12 +143,7 @@ function criarInterpolador(amostras, campo) {
   };
 }
 
-// ---------------------------------------------------------------------
-// 4. Integral trapezoidal da curva de potencia bruta dentro da janela
-//    exata do ensaio [tInicio, tInicio + 60s] -> Joules (W * s = J).
-//    Independe dos frames: usa so as amostras reais do nvidia-smi mais
-//    os dois pontos de borda interpolados.
-// ---------------------------------------------------------------------
+// 4. Integral trapezoidal da potência na janela exata do ensaio (J).
 function integrarConsumoJoules(amostras, getWatts, tInicio, tFim) {
   const pontos = [
     { epochSec: tInicio, watts: getWatts(tInicio) },
@@ -207,9 +159,7 @@ function integrarConsumoJoules(amostras, getWatts, tInicio, tFim) {
   return joules;
 }
 
-// ---------------------------------------------------------------------
-// Execucao principal
-// ---------------------------------------------------------------------
+// Execução principal
 const relatorio = parseRelatorio(caminhoRelatorio);
 const amostrasPotencia = parsePowerLog(caminhoPowerLog);
 const getWatts = criarInterpolador(amostrasPotencia, "watts");
@@ -269,20 +219,12 @@ const vramMaxMb = temVram ? Math.max(...framesComEnergia.map((f) => f.vramMbInst
 const tempMediaC = temTemp ? media(framesComEnergia.map((f) => f.tempCInst)) : null;
 const tempMinC = temTemp ? Math.min(...framesComEnergia.map((f) => f.tempCInst)) : null;
 const tempMaxC = temTemp ? Math.max(...framesComEnergia.map((f) => f.tempCInst)) : null;
-// Deriva termica: diferenca entre a temperatura no fim e no inicio do
-// ensaio — se for grande, a GPU nao estava em equilibrio termico quando
-// o ensaio comecou (util pra auditar lotes longos/randomizados).
+// Deriva térmica: temperatura final menos inicial.
 const derivaTermicaC = temTemp
   ? framesComEnergia[framesComEnergia.length - 1].tempCInst - framesComEnergia[0].tempCInst
   : null;
 
-// --- Clock e throttling termico (secao nova, 2026-08-24/26): a temperatura
-// de nucleo satura num teto de fabrica e por isso nao revela throttling
-// sustentado (ver comentario de NVIDIA_SMI_QUERY_LOOP em
-// automatizar_coleta.mjs) — clock real e o flag do driver mostram o efeito
-// direto. Calculado sobre as amostras BRUTAS do power_log dentro da janela
-// do ensaio (nao por-quadro), porque throttling e um flag booleano, nao
-// interpola.
+// Clock e throttling nas amostras brutas; a temperatura satura e não revela throttling.
 const amostrasNaJanela = amostrasPotencia.filter((a) => a.epochSec >= tInicioS && a.epochSec <= tFimS);
 const clockMedioMhz = temClock ? media(amostrasNaJanela.map((a) => a.clockMhz)) : null;
 const clockMinMhz = temClock ? Math.min(...amostrasNaJanela.map((a) => a.clockMhz)) : null;
@@ -302,9 +244,7 @@ const consumoAcumuladoJ = integrarConsumoJoules(amostrasPotencia, getWatts, tIni
 const consumoAcumuladoWh = consumoAcumuladoJ / 3600;
 const potenciaMediaJanela = consumoAcumuladoJ / DURACAO_ENSAIO_S; // media ponderada pelo tempo
 
-// ---------------------------------------------------------------------
-// Saida
-// ---------------------------------------------------------------------
+// Saída
 let out = "";
 out += `=== ANALISE DE METRICAS DE GPU (Green IT + VRAM) ===\n`;
 out += `API de Renderizacao: ${relatorio.api}\n`;

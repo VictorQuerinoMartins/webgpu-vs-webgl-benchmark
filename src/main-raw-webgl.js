@@ -109,13 +109,7 @@ function mat4Mul(a, b) {
   return o;
 }
 
-// Catmull-Rom centripetal + parametrização por comprimento de arco — replica
-// THREE.CatmullRomCurve3.getPoint()/getPointAt() (curveType padrão
-// 'centripetal', arcLengthDivisions=200) usada em main.js, pra que a câmera
-// passe pelo mesmo lugar no mesmo instante t nos dois modos de renderização.
-// Antes desta versão, a variante "uniforme" aqui usada acelerava/desacelerava
-// entre os waypoints (não-equidistantes) de forma diferente do main.js — ver
-// LIMITACOES-VALIDACAO-LITERATURA.md item 1.3 (achado 2026-08-24).
+// Catmull-Rom centripetal por comprimento de arco; replica THREE.CatmullRomCurve3 do main.js.
 function criarCurvaCentripetal(waypoints) {
   const n = waypoints.length;
   const dist2 = (a, b) => (a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2;
@@ -183,20 +177,11 @@ function criarCurvaCentripetal(waypoints) {
     return (i + segFrac) / (il - 1);
   }
 
-  // Clamp defensivo: o primeiro rAF após o [SPACE] pode chegar com um `ts`
-  // anterior ao `performance.now()` capturado no listener de keydown (o
-  // timestamp do rAF é definido antes do processamento do evento de input),
-  // gerando elapsed/t negativo por 1 frame — sem isso, getUtoTmapping busca
-  // um comprimento de arco negativo e retorna NaN.
+  // Clamp: o 1º rAF pode vir antes do keydown e gerar t negativo (NaN).
   return { getPointAt: (u) => getPoint(getUtoTmapping(Math.max(0, Math.min(u, 1)))) };
 }
 
-// Decomposição CPU/GPU (Green IT §3.A do CLAUDE.md, adicionado 2026-08-24 —
-// ver CHANGES-LOG.md e src/main-raw-webgpu.js para o equivalente WebGPU).
-// Pool de N query objects em rotação: begin/end é síncrono e por frame (sem
-// restrição de esperar leitura anterior), só a LEITURA do resultado é
-// assíncrona — por isso cada slot só é reutilizado depois que seu resultado
-// anterior foi consumido em pollPendentes().
+// Pool de queries em rotação; só a leitura é assíncrona, slot reusado após consumo.
 function criarMedidorGpu(gl) {
   const ext = gl.getExtension("EXT_disjoint_timer_query_webgl2");
   if (!ext) return null;

@@ -157,25 +157,9 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// nvidia-smi: potencia, VRAM e temperatura numa unica chamada (Green IT).
 const NVIDIA_SMI_QUERY = "power.draw,memory.used,temperature.gpu";
-// Amostrador oficial usa --loop-ms=100 (10 Hz) com o timestamp do proprio
-// nvidia-smi (precisao de ms) em vez de Date.now() apos cada chamada — evita
-// tanto o overhead de spawnar um processo novo a cada 100ms quanto o jitter
-// de agendamento do setInterval do Node. Medido em 2026-10-29 na RTX 3050
-// Laptop sob carga: power.draw so muda ~a cada 500 ms (2 Hz). 10 Hz nao da
-// resolucao de 100 ms; so evita perder uma atualizacao (1 Hz perderia metade)
-// e reduz a defasagem de leitura. Ver Yang, Adamek e Armour (SC24,
-// DOI 10.1109/SC41406.2024.00028) sobre o sensor atualizar so em janelas.
-//
-// clocks.current.graphics + clocks_throttle_reasons.*_thermal_slowdown
-// (adicionado 2026-08-26): a temperatura de nucleo satura num teto de
-// fabrica (~87C, "GPU Target Temperature Specification") e por isso NAO
-// revela throttling sustentado -- dois ensaios podem reportar a mesma
-// temperatura media com clocks bem diferentes, porque o sensor de nucleo e
-// controlado ativamente pra ficar estavel, nao e uma leitura livre. O clock
-// real e o flag booleano de throttling termico do proprio driver mostram o
-// efeito direto, sem precisar inferir a partir de temperatura+potencia+FPS.
+// nvidia-smi a 10 Hz com timestamp próprio; o sensor só atualiza a cada ~500 ms.
+// Clock e flag de throttling do driver: a temperatura satura (~87C) e não revela throttling.
 const NVIDIA_SMI_QUERY_LOOP =
   `timestamp,${NVIDIA_SMI_QUERY},clocks.current.graphics,` +
   `clocks_throttle_reasons.sw_thermal_slowdown,clocks_throttle_reasons.hw_thermal_slowdown`;
@@ -190,10 +174,7 @@ async function checarNvidiaSmi() {
   }
 }
 
-// "2026/08/24 13:49:31.624" (hora local, formato do nvidia-smi) -> epoch ms.
-// new Date() sem sufixo de fuso interpreta a string como hora local (mesmo
-// relogio do sistema usado por Date.now() em outros pontos da coleta), entao
-// o valor resultante e diretamente comparavel aos timestamps do relatorio.
+// Hora local do nvidia-smi -> epoch ms, comparável aos timestamps do relatório.
 function parseTimestampNvidiaSmiMs(ts) {
   const iso = ts.trim().replace(/^(\d{4})\/(\d{2})\/(\d{2})/, "$1-$2-$3").replace(" ", "T");
   return new Date(iso).getTime();
@@ -348,8 +329,7 @@ async function rodarEnsaioUmaVez(browser, { modo, cenario, run, opts, caminhoPow
   // Sem vsync: saida separada, nunca mistura com o dataset principal.
   const destDir = opts.semVsync ? DEST_DIR[modo].replace(/^resultados\//, "resultados_sem_vsync/") : DEST_DIR[modo];
 
-  // Sufixo "aquecimento" (nao "_run<N>") marca claramente que nao e uma
-  // repeticao oficial, evitando colidir com o arquivo run<N> real.
+  // Sufixo "aquecimento" evita colidir com o arquivo run<N>.
   const sufixo = aquecimento ? "aquecimento" : `run${run}`;
   const rotuloCenario = RE_CENARIO_INSTANCING.test(cenario) ? `instancing_${cenario}` : `cenario_${cenario}`;
   const destPath = join(destDir, `relatorio_benchmark_${modo}_${rotuloCenario}_${sufixo}.txt`);

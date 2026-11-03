@@ -108,13 +108,7 @@ function mat4Mul(a, b) {
   return o;
 }
 
-// Catmull-Rom centripetal + parametrização por comprimento de arco — replica
-// THREE.CatmullRomCurve3.getPoint()/getPointAt() (curveType padrão
-// 'centripetal', arcLengthDivisions=200) usada em main.js, pra que a câmera
-// passe pelo mesmo lugar no mesmo instante t nos dois modos de renderização.
-// Antes desta versão, a variante "uniforme" aqui usada acelerava/desacelerava
-// entre os waypoints (não-equidistantes) de forma diferente do main.js — ver
-// LIMITACOES-VALIDACAO-LITERATURA.md item 1.3 (achado 2026-08-24).
+// Catmull-Rom centripetal por comprimento de arco; replica THREE.CatmullRomCurve3 do main.js.
 function criarCurvaCentripetal(waypoints) {
   const n = waypoints.length;
   const dist2 = (a, b) => (a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2;
@@ -182,22 +176,11 @@ function criarCurvaCentripetal(waypoints) {
     return (i + segFrac) / (il - 1);
   }
 
-  // Clamp defensivo: o primeiro rAF após o [SPACE] pode chegar com um `ts`
-  // anterior ao `performance.now()` capturado no listener de keydown (o
-  // timestamp do rAF é definido antes do processamento do evento de input),
-  // gerando elapsed/t negativo por 1 frame — sem isso, getUtoTmapping busca
-  // um comprimento de arco negativo e retorna NaN.
+  // Clamp: o 1º rAF pode vir antes do keydown e gerar t negativo (NaN).
   return { getPointAt: (u) => getPoint(getUtoTmapping(Math.max(0, Math.min(u, 1)))) };
 }
 
-// Decomposição CPU/GPU (Green IT §3.A do CLAUDE.md, adicionado 2026-08-24 —
-// ver CHANGES-LOG.md). Frame Time (rAF) mistura JS + submissão de comandos +
-// tempo real de GPU; timestamp queries medem só o tempo de GPU, permitindo
-// isolar "Overhead de CPU" = Frame Time - Tempo de GPU. Ring buffer de N
-// slots evita travar o frame esperando o readback assíncrono do resultado —
-// o valor lido num quadro corresponde a um quadro alguns passos atrás, não
-// ao quadro atual (aceitável: o relatório usa médias sobre milhares de
-// quadros, não pares quadro-a-quadro exatos).
+// Ring buffer de timestamp queries; leitura assíncrona, defasada alguns quadros.
 const GPU_QUERY_SLOTS = 4;
 
 function criarMedidorGpu(device) {
@@ -512,9 +495,7 @@ function numMipLevels(width, height) {
   return Math.floor(Math.log2(Math.max(width, height))) + 1;
 }
 
-// WebGPU não tem gl.generateMipmap — cada nível é gerado com um blit
-// (triângulo cobrindo a tela inteira, amostrando o nível anterior) via
-// render pass, técnica padrão da comunidade (ver LIMITACOES-VALIDACAO-LITERATURA.md item 4).
+// Mipmaps via blit de triângulo fullscreen (WebGPU não tem generateMipmap).
 function criarGeradorDeMipmaps(device) {
   const mod = device.createShaderModule({
     code: `

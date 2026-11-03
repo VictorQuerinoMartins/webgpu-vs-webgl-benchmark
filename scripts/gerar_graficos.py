@@ -291,11 +291,7 @@ def fig_consumo_energetico(grupos):
     plt.close(fig)
 
 
-# Paleta categorica Okabe-Ito (colorblind-safe), validada com scripts/validate_palette.js
-# do skill de dataviz -- hues bem distintos entre si em vez de degrade da mesma cor,
-# a pedido do autor do TCC (daltonico). "D" e "N=5000" compartilham o roxo-avermelhado
-# (unico repeat entre os dois paineis; Okabe-Ito so tem 6 hues que passam sozinhos no
-# validador, para 7 categorias precisadas) -- paineis e legendas separados mitigam isso.
+# Okabe-Ito (daltônico); "D" e "N=5000" repetem cor, mas ficam em painéis separados.
 RAMPA_CENARIO = {"cenario_a": "#56B4E9", "cenario_b": "#E69F00", "cenario_c": "#009E73", "cenario_d": "#CC79A7"}
 RAMPA_DENSIDADE = {"instancing_n500": "#0072B2", "instancing_n2000": "#D55E00", "instancing_n5000": "#CC79A7"}
 

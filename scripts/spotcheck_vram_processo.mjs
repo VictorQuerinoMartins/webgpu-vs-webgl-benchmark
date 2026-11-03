@@ -1,11 +1,5 @@
-// Spot-check único (fora do dataset oficial): confirma se o VRAM desproporcional
-// do WebGPU no eixo de instancing é real ou artefato de o nvidia-smi medir a GPU
-// inteira (todos os processos) em vez de isolar o processo do Chrome sob teste.
-// Compara, durante o mesmo ensaio N=5000/WebGPU:
-//   (a) nvidia-smi --query-gpu=memory.used  -> GPU inteira (metodo oficial atual)
-//   (b) contador Windows "GPU Process Memory\Dedicated Usage" do processo
-//       --type=gpu-process do Chrome lancado por este script, filtrado pelo luid
-//       da RTX 3050 -> isolado ao processo, sem ruido de outros apps.
+// Spot-check único: confirma que o VRAM alto do WebGPU (N=5000) não é artefato do nvidia-smi.
+// Compara nvidia-smi (GPU inteira) com o contador Windows de VRAM dedicada do processo gpu.
 
 import { chromium } from "playwright-core";
 import { execFile } from "node:child_process";
@@ -32,9 +26,7 @@ async function lerVramTotalNvidiaSmi() {
   return Number(stdout.trim());
 }
 
-// Descobre o luid do adaptador com maior uso dedicado agora (heuristica: e a
-// dGPU ativa). Validado manualmente antes deste script: luid da RTX 3050 bateu
-// com o total do nvidia-smi (~420MB) entre os 3 luids listados no notebook.
+// Escolhe o adaptador com maior uso dedicado (heurística: a dGPU ativa).
 async function descobrirLuidDgpu() {
   const ps = [
     "$s = (Get-Counter '\\GPU Adapter Memory(*)\\Dedicated Usage').CounterSamples",
@@ -45,9 +37,7 @@ async function descobrirLuidDgpu() {
   return stdout.trim();
 }
 
-// browser.process() nao existe nesta versao de playwright-core -> identifica o
-// Chrome do teste por diferenca de PIDs (snapshot antes/depois do launch), em
-// vez de depender de PID principal exposto pela lib.
+// Identifica o processo por diferença de PIDs antes/depois do launch.
 async function listarPidsChrome() {
   const ps = "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'chrome.exe' } | Select-Object -ExpandProperty ProcessId";
   const { stdout } = await execFileAsync("powershell", ["-NoProfile", "-NonInteractive", "-Command", ps]);

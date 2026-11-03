@@ -69,14 +69,7 @@ function gerarCurvaOrbitalInstancing(lado, espacamento) {
   return new THREE.CatmullRomCurve3(pontos); // aberta — mesmo comportamento (sem wrap) do trilho do Bistro
 }
 
-// Decomposição CPU/GPU pro caminho WebGL clássico (Green IT §3.A do
-// CLAUDE.md, 2026-08-24 — ver CHANGES-LOG.md). O WebGLRenderer classico do
-// Three.js nao tem suporte nativo a timestamp queries (so o WebGPURenderer
-// novo tem, via trackTimestamp); reaproveita o mesmo medidor manual de
-// src/main-raw-webgl.js (EXT_disjoint_timer_query_webgl2, pool de N slots
-// em rotacao). O begin/end aqui envolve a chamada inteira de
-// renderer.render(), que emite todos os draw calls do frame de forma
-// sincrona — equivalente ao que os draw calls do RAW cobrem.
+// Medidor manual de GPU (EXT_disjoint_timer_query_webgl2); o WebGLRenderer clássico não tem timestamp.
 function criarMedidorGpuWebGL(gl) {
   const ext = gl.getExtension("EXT_disjoint_timer_query_webgl2");
   if (!ext) return null;
@@ -137,9 +130,6 @@ const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerH
 
 let renderer;
 if (usarWebGPU) {
-  // trackTimestamp habilita GPU timestamp queries nativas do WebGPURenderer
-  // (renderer.resolveTimestampsAsync/renderer.info.render.timestamp) — decomposicao
-  // CPU/GPU do Green IT §3.A, ver CHANGES-LOG.md 2026-08-24.
   renderer = new WebGPURenderer({ antialias: true, powerPreference: "high-performance", trackTimestamp: true });
 } else {
   renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
@@ -244,9 +234,7 @@ const curve = new THREE.CatmullRomCurve3([
 const curveAtiva = modoInstancing
   ? gerarCurvaOrbitalInstancing(ladoGridInstancing, ESPACAMENTO_GRID_INSTANCING)
   : curve;
-// Aquece o cache de comprimento de arco (getLengths, 200 subdivisões) fora da
-// janela cronometrada — a primeira chamada de getPointAt() é cara e senão
-// contaminaria o Frame Time Máximo do primeiro quadro pós-[SPACE].
+// Aquece o cache de arc-length fora da janela cronometrada; a 1ª chamada é cara.
 curveAtiva.getPointAt(0);
 
 const duration = 60000;
@@ -361,22 +349,12 @@ function animate() {
   if (querySlotWebGL >= 0) medidorGpuWebGL.encerrar();
   medidorGpuWebGL?.pollPendentes();
   if (usarWebGPU) {
-    // Fire-and-forget: resolveTimestampsAsync() e seguro de chamar todo
-    // quadro sem aguardar — o proprio pool interno do three.js reusa a
-    // mesma Promise se uma resolucao ja estiver em andamento (ver
-    // WebGPUTimestampQueryPool.resolveQueriesAsync). O valor lido em
-    // renderer.info.render.timestamp fica alguns quadros atrasado, igual
-    // ao ring buffer manual usado nos arquivos RAW.
+    // Fire-and-forget; o valor lido fica alguns quadros atrasado.
     renderer.resolveTimestampsAsync(THREE.TimestampQuery.RENDER).catch(() => {});
   }
 
   if (isAutomated) {
-    // Leitura de drawCalls tem que vir DEPOIS de renderer.render(): o WebGPURenderer
-    // roda um laço de animação interno próprio (Animation.start(), disparado em
-    // renderer.init()) que reseta info.render.drawCalls a cada frame, independente
-    // do nosso requestAnimationFrame — ler antes do render() sempre pegava o valor
-    // recém-zerado (bug achado em 2026-08-22, ensaio3 saiu com Draw Calls 0.0
-    // cravado no WebGPU via Three.js).
+    // Ler drawCalls só após render(): o loop interno do WebGPURenderer zera antes.
     // Coleta de métricas (ignora o primeiro frame onde delta ≈ 0)
     if (delta > 0.001) {
       const drawCalls = usarWebGPU ? renderer.info.render.drawCalls : renderer.info.render.calls;
