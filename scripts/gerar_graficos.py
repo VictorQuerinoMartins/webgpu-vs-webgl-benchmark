@@ -148,7 +148,25 @@ def estilo_cientifico():
     })
 
 
-def grafico_barras_agrupadas(ax, categorias, categoria_labels, campo, grupos, ylabel, log=False, legend=True):
+def valores_por_ensaio(grupos, modo, rotulo, campo):
+    return [r[campo] for r in grupos.get(modo, {}).get(rotulo, []) if r.get(campo) is not None]
+
+
+def pontos_individuais(ax, xc, valores, largura, semente=0):
+    """Um ponto por ensaio sobre a barra, com jitter fixo para nao esconder valores repetidos."""
+    jitter = np.random.default_rng(semente).uniform(-0.3, 0.3, len(valores)) * largura
+    ax.scatter(xc + jitter, valores, s=11, facecolor="white", edgecolor="#222222",
+               linewidth=0.6, zorder=4)
+
+
+def salvar_padrao(fig, nome, dois_paineis=False):
+    """Margens fixas e sem recorte automatico: toda figura sai com o mesmo tamanho e o grafico na mesma posicao."""
+    fig.subplots_adjust(left=0.115, right=0.985, top=0.87, bottom=0.21, wspace=0.32 if dois_paineis else 0.2)
+    with plt.rc_context({"savefig.bbox": "standard"}):
+        fig.savefig(OUT_DIR / nome)
+
+
+def grafico_barras_agrupadas(ax, categorias, categoria_labels, campo, grupos, ylabel, log=False, legend=True, pontos=False):
     n_modos = len(MODOS)
     largura = 0.8 / n_modos
     x = np.arange(len(categorias))
@@ -164,6 +182,9 @@ def grafico_barras_agrupadas(ax, categorias, categoria_labels, campo, grupos, yl
             label=MODO_LABEL[modo], color=MODO_COLOR[modo], hatch=MODO_HATCH[modo],
             edgecolor="#333333", linewidth=0.6, error_kw={"elinewidth": 0.8, "ecolor": "#333333"},
         )
+        if pontos:
+            for j, cat in enumerate(categorias):
+                pontos_individuais(ax, x[j] + offset, valores_por_ensaio(grupos, modo, cat, campo), largura, semente=i * 10 + j)
     ax.set_xticks(x)
     ax.set_xticklabels([categoria_labels[c] for c in categorias])
     ax.set_ylabel(ylabel)
@@ -179,10 +200,9 @@ def grafico_barras_agrupadas(ax, categorias, categoria_labels, campo, grupos, yl
 def fig_frametime_cenarios(grupos):
     fig, ax = plt.subplots(figsize=(6.3, 3.6))
     grafico_barras_agrupadas(ax, CENARIOS, CENARIO_LABEL, "frame_time_medio_ms", grupos,
-                              "Tempo de Frame Médio (ms)")
+                              "Tempo de Frame Médio (ms)", pontos=True)
     ax.set_xlabel("Cenário (carga de textura crescente)")
-    fig.tight_layout()
-    fig.savefig(OUT_DIR / "fig_frametime_cenarios.png")
+    salvar_padrao(fig, "fig_frametime_cenarios.png")
     plt.close(fig)
 
 
@@ -191,13 +211,12 @@ def fig_vram_cenarios(grupos):
     grafico_barras_agrupadas(ax, CENARIOS, CENARIO_LABEL, "vram_media_mb", grupos,
                               "VRAM Média (MB)")
     ax.set_xlabel("Cenário (carga de textura crescente)")
-    fig.tight_layout()
-    fig.savefig(OUT_DIR / "fig_vram_cenarios.png")
+    salvar_padrao(fig, "fig_vram_cenarios.png")
     plt.close(fig)
 
 
 def fig_cenario_d_colapso(grupos):
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.5, 3.4))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.3, 3.6))
     x = np.arange(len(MODOS))
     medias = [media_std(grupos, m, "cenario_d", "frame_time_medio_ms")[0] for m in MODOS]
     desvios = [media_std(grupos, m, "cenario_d", "frame_time_medio_ms")[1] for m in MODOS]
@@ -206,6 +225,8 @@ def fig_cenario_d_colapso(grupos):
     bars = ax1.bar(x, medias, yerr=desvios, capsize=3, color=cores, edgecolor="#333333", linewidth=0.6)
     for bar, h in zip(bars, hachuras):
         bar.set_hatch(h)
+    for k, m in enumerate(MODOS):
+        pontos_individuais(ax1, x[k], valores_por_ensaio(grupos, m, "cenario_d", "frame_time_medio_ms"), 0.8, semente=k)
     ax1.set_xticks(x)
     ax1.set_xticklabels([MODO_LABEL[m] for m in MODOS], rotation=20, ha="right")
     ax1.set_ylabel("Tempo de Frame Médio (ms)")
@@ -214,6 +235,7 @@ def fig_cenario_d_colapso(grupos):
     # Tempo de Frame Maximo nao esta no parser principal (nao usado nos demais
     # graficos); le direto dos relatorios brutos so para este grafico de destaque.
     maximos = []
+    maximos_ind = []
     for m in MODOS:
         vals = []
         for _ensaio_nome, caminho in listar_arquivos(DIRS[m]):
@@ -224,18 +246,19 @@ def fig_cenario_d_colapso(grupos):
             if v is not None:
                 vals.append(v)
         maximos.append(statistics.fmean(vals) if vals else 0.0)
+        maximos_ind.append(vals)
     bars2 = ax2.bar(x, maximos, color=cores, edgecolor="#333333", linewidth=0.6)
     for bar, h in zip(bars2, hachuras):
         bar.set_hatch(h)
+    for k, vals in enumerate(maximos_ind):
+        pontos_individuais(ax2, x[k], vals, 0.8, semente=k + 5)
     ax2.set_xticks(x)
     ax2.set_xticklabels([MODO_LABEL[m] for m in MODOS], rotation=20, ha="right")
     ax2.set_ylabel("Tempo de Frame Máximo (ms)")
     ax2.set_yscale("log")
     ax2.set_title("(b) Máximo — escala logarítmica")
 
-    fig.suptitle("Cenário D — colapso de frame time no WebGPU via Three.js", y=1.03)
-    fig.tight_layout()
-    fig.savefig(OUT_DIR / "fig_cenario_d_colapso.png")
+    salvar_padrao(fig, "fig_cenario_d_colapso.png", dois_paineis=True)
     plt.close(fig)
 
 
@@ -244,8 +267,7 @@ def fig_frametime_instancing(grupos):
     grafico_barras_agrupadas(ax, DENSIDADES, DENSIDADE_LABEL, "frame_time_medio_ms", grupos,
                               "Tempo de Frame Médio (ms)", log=True)
     ax.set_xlabel("Densidade de instâncias (estresse de Draw Calls)")
-    fig.tight_layout()
-    fig.savefig(OUT_DIR / "fig_frametime_instancing.png")
+    salvar_padrao(fig, "fig_frametime_instancing.png")
     plt.close(fig)
 
 
@@ -254,13 +276,12 @@ def fig_vram_instancing(grupos):
     grafico_barras_agrupadas(ax, DENSIDADES, DENSIDADE_LABEL, "vram_media_mb", grupos,
                               "VRAM Média (MB)")
     ax.set_xlabel("Densidade de instâncias (estresse de Draw Calls)")
-    fig.tight_layout()
-    fig.savefig(OUT_DIR / "fig_vram_instancing.png")
+    salvar_padrao(fig, "fig_vram_instancing.png")
     plt.close(fig)
 
 
 def fig_framesporwatt(grupos):
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.8, 3.6))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.3, 3.6))
     grafico_barras_agrupadas(ax1, CENARIOS, CENARIO_LABEL, "frames_por_watt", grupos, "Frames por Watt", legend=False)
     ax1.set_xlabel("Cenário (carga de textura)")
     ax1.set_title("(a) Progressão de textura")
@@ -269,9 +290,7 @@ def fig_framesporwatt(grupos):
     ax2.set_title("(b) Estresse de Draw Calls")
     handles, labels = ax1.get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=4, frameon=False)
-    fig.suptitle("Coeficiente de Eficiência Frames/Watt", y=1.14)
-    fig.tight_layout()
-    fig.savefig(OUT_DIR / "fig_framesporwatt.png")
+    salvar_padrao(fig, "fig_framesporwatt.png", dois_paineis=True)
     plt.close(fig)
 
 
